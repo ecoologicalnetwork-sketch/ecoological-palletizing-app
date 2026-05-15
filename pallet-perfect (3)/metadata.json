@@ -1,0 +1,8 @@
+{
+  "name": "Pallet Perfect",
+  "description": "High-precision 3D pallet packing and logistics optimizer for Shellz warehouse operations.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
