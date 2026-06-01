@@ -3,7 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Environment, Grid, PivotControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { Pallet, PackedItem } from '../types';
-import { cn } from '../lib/utils';
+import { cn, getBoxColor } from '../lib/utils';
 import { RotateCw, Move, Trash2, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { useRef } from 'react';
 
@@ -21,7 +21,7 @@ const Box3D = ({ item }: BoxProps) => {
     -(position.y + dimensions.width / 2)
   ];
 
-  const baseColor = box.color || '#3b82f6';
+  const baseColor = getBoxColor(box);
   const opacity = isScanned ? 1 : 0.25;
 
   return (
@@ -48,6 +48,7 @@ interface Pallet3DProps {
   pallets: Pallet[];
   activePalletIdx: number;
   landmarksVisible?: boolean;
+  maxPalletHeight?: number;
 }
 
 const LANDMARKS = [
@@ -145,7 +146,7 @@ const WarehouseEnvironment = () => {
   );
 };
 
-export const PalletViewer = ({ pallets, activePalletIdx, landmarksVisible = true }: Pallet3DProps) => {
+export const PalletViewer = ({ pallets, activePalletIdx, landmarksVisible = true, maxPalletHeight = 92 }: Pallet3DProps) => {
   const controlsRef = useRef<any>(null);
   
   // Calculate spacing and positions
@@ -315,17 +316,23 @@ export const PalletViewer = ({ pallets, activePalletIdx, landmarksVisible = true
       <div className="absolute bottom-6 right-6 bg-white shadow-xl border border-slate-200 p-4 rounded-sm text-[10px] uppercase font-mono text-slate-500 w-48 pointer-events-none select-none">
         <div className="flex justify-between gap-4 mb-2">
           <span className="font-bold">Build Height</span>
-          <span className={cn(
-            "font-black",
-            activePallet.items.reduce((max, item) => Math.max(max, item.position.z + item.dimensions.height), 0) > 90 ? "text-red-500" : "text-indigo-600"
-          )}>92" LIMIT</span>
+          {maxPalletHeight && maxPalletHeight < 500 ? (
+            <span className={cn(
+              "font-black",
+              activePallet.items.reduce((max, item) => Math.max(max, item.position.z + item.dimensions.height), 0) > (maxPalletHeight - 2) ? "text-red-500" : "text-indigo-600"
+            )}>{maxPalletHeight}" LIMIT</span>
+          ) : (
+            <span className="font-black text-emerald-600">UNLIMITED</span>
+          )}
         </div>
-        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-           <div 
-             className="h-full bg-indigo-600 transition-all duration-1000" 
-             style={{ width: `${Math.min(100, (activePallet.items.reduce((max, item) => Math.max(max, item.position.z + item.dimensions.height), 0) / 92) * 100)}%` }}
-           />
-        </div>
+        {maxPalletHeight && maxPalletHeight < 500 && (
+          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+             <div 
+               className="h-full bg-indigo-600 transition-all duration-1000" 
+               style={{ width: `${Math.min(100, (activePallet.items.reduce((max, item) => Math.max(max, item.position.z + item.dimensions.height), 0) / maxPalletHeight) * 100)}%` }}
+             />
+          </div>
+        )}
       </div>
     </div>
   );

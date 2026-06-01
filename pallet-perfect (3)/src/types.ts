@@ -22,9 +22,17 @@ export interface Box {
   color?: string;
 }
 
+export interface StandardBox {
+  id: string;
+  name: string;
+  dimensions: Dimensions;
+  weightCapacity: number;
+  tareWeight: number;
+}
+
 export interface PackedItem {
   id: string;
-  box: Box;
+  box: Box | StandardBox;
   position: Position;
   dimensions: Dimensions; // Includes buffer
   isScanned: boolean;
@@ -58,13 +66,17 @@ export interface SalesOrder {
   }[];
 }
 
-export type BuildStep = 'input' | 'confirmation' | 'packing' | 'summary';
+export type BuildStep = 'input' | 'consolidation' | 'confirmation' | 'packing' | 'summary';
 
 export interface SOSConfig {
   apiKey: string;
   userId: string;
   accountId: string;
   environment: 'production' | 'sandbox';
+  maxPalletHeight?: number;
+  maxPalletWidth?: number;
+  maxPalletLength?: number;
+  minSupportOverlap?: number;
 }
 
 export interface HistoricalLog {

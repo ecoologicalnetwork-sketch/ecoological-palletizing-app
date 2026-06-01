@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Box, PalletBase, Dimensions, SOSConfig } from '../types';
+import { Box, PalletBase, Dimensions, SOSConfig, StandardBox } from '../types';
 import { 
   ArrowLeft, Download, Upload, Plus, Trash2, Save, 
   Package, Database, LayoutGrid, Check, X, AlertCircle,
-  Globe, Key, User, ShieldCheck
+  Globe, Key, User, ShieldCheck, BoxIcon, Sliders
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import * as XLSX from 'xlsx';
@@ -11,9 +11,11 @@ import * as XLSX from 'xlsx';
 interface AdminPanelProps {
   boxLibrary: Box[];
   palletLibrary: PalletBase[];
+  standardBoxLibrary: StandardBox[];
   sosConfig: SOSConfig;
   onUpdateBoxes: (boxes: Box[]) => void;
   onUpdatePallets: (pallets: PalletBase[]) => void;
+  onUpdateStandardBoxes: (boxes: StandardBox[]) => void;
   onUpdateSOSConfig: (config: SOSConfig) => void;
   onClose: () => void;
 }
@@ -21,15 +23,18 @@ interface AdminPanelProps {
 export const AdminPanel = ({ 
   boxLibrary, 
   palletLibrary, 
+  standardBoxLibrary,
   sosConfig,
   onUpdateBoxes, 
   onUpdatePallets, 
+  onUpdateStandardBoxes,
   onUpdateSOSConfig,
   onClose 
 }: AdminPanelProps) => {
-  const [activeTab, setActiveTab] = useState<'boxes' | 'pallets' | 'sos'>('boxes');
+  const [activeTab, setActiveTab] = useState<'boxes' | 'pallets' | 'sos' | 'standard_boxes' | 'constraints'>('boxes');
   const [tempBoxes, setTempBoxes] = useState<Box[]>([...boxLibrary]);
   const [tempPallets, setTempPallets] = useState<PalletBase[]>([...palletLibrary]);
+  const [tempStandardBoxes, setTempStandardBoxes] = useState<StandardBox[]>([...standardBoxLibrary]);
   const [tempSOS, setTempSOS] = useState<SOSConfig>({ ...sosConfig });
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -38,13 +43,17 @@ export const AdminPanel = ({
     const uniqueBoxes = Array.from(new Map(tempBoxes.map(b => [b.sku, b])).values());
     // Deduplicate pallets by ID
     const uniquePallets = Array.from(new Map(tempPallets.map(p => [p.id, p])).values());
+    // Deduplicate standard boxes by ID
+    const uniqueStdBoxes = Array.from(new Map(tempStandardBoxes.map(b => [b.id, b])).values());
     
     onUpdateBoxes(uniqueBoxes);
     onUpdatePallets(uniquePallets);
+    onUpdateStandardBoxes(uniqueStdBoxes);
     onUpdateSOSConfig(tempSOS);
     
     setTempBoxes(uniqueBoxes);
     setTempPallets(uniquePallets);
+    setTempStandardBoxes(uniqueStdBoxes);
     setHasChanges(false);
   };
 
@@ -72,6 +81,18 @@ export const AdminPanel = ({
     setHasChanges(true);
   };
 
+  const addStandardBox = () => {
+    const newBox: StandardBox = {
+      id: `STD-${Math.random().toString(36).substring(7).toUpperCase()}`,
+      name: 'Standard Shipping Box',
+      dimensions: { length: 18, width: 18, height: 18 },
+      weightCapacity: 50,
+      tareWeight: 1.5
+    };
+    setTempStandardBoxes([newBox, ...tempStandardBoxes]);
+    setHasChanges(true);
+  };
+
   const removeBox = (index: number) => {
     const newBoxes = [...tempBoxes];
     newBoxes.splice(index, 1);
@@ -86,10 +107,18 @@ export const AdminPanel = ({
     setHasChanges(true);
   };
 
-  const clearAll = (type: 'boxes' | 'pallets') => {
-    if (!confirm(`Are you sure you want to clear the entire ${type === 'boxes' ? 'Box Library' : 'Pallet Inventory'}?`)) return;
+  const removeStandardBox = (index: number) => {
+    const newBoxes = [...tempStandardBoxes];
+    newBoxes.splice(index, 1);
+    setTempStandardBoxes(newBoxes);
+    setHasChanges(true);
+  };
+
+  const clearAll = (type: 'boxes' | 'pallets' | 'standard_boxes') => {
+    if (!confirm(`Are you sure you want to clear the entire ${type === 'boxes' ? 'Box Library' : type === 'pallets' ? 'Pallet Inventory' : 'Standard Box Library'}?`)) return;
     if (type === 'boxes') setTempBoxes([]);
-    else setTempPallets([]);
+    else if (type === 'pallets') setTempPallets([]);
+    else setTempStandardBoxes([]);
     setHasChanges(true);
   };
 
@@ -100,6 +129,11 @@ export const AdminPanel = ({
 
   const updatePallet = (id: string, updates: Partial<PalletBase>) => {
     setTempPallets(tempPallets.map(p => p.id === id ? { ...p, ...updates } : p));
+    setHasChanges(true);
+  };
+
+  const updateStandardBox = (id: string, updates: Partial<StandardBox>) => {
+    setTempStandardBoxes(tempStandardBoxes.map(b => b.id === id ? { ...b, ...updates } : b));
     setHasChanges(true);
   };
 
@@ -292,6 +326,24 @@ export const AdminPanel = ({
           >
             <LayoutGrid size={18} /> Pallet Sizes
           </button>
+          <button 
+            onClick={() => setActiveTab('standard_boxes')}
+            className={cn(
+              "w-full flex items-center gap-3 px-4 py-3 rounded-sm text-sm font-black uppercase tracking-widest transition-all",
+              activeTab === 'standard_boxes' ? "bg-indigo-50 text-indigo-600 border-l-4 border-indigo-600" : "text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+            )}
+          >
+            <BoxIcon size={18} /> Standard Boxes
+          </button>
+          <button 
+            onClick={() => setActiveTab('constraints')}
+            className={cn(
+              "w-full flex items-center gap-3 px-4 py-3 rounded-sm text-sm font-black uppercase tracking-widest transition-all",
+              activeTab === 'constraints' ? "bg-indigo-50 text-indigo-600 border-l-4 border-indigo-600" : "text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+            )}
+          >
+            <Sliders size={18} /> Constraints
+          </button>
           
           <div className="pt-8 px-4">
              <div className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-4">Integrations</div>
@@ -313,17 +365,19 @@ export const AdminPanel = ({
             <div className="flex justify-between items-end mb-8">
               <div>
                 <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tighter italic">
-                  {activeTab === 'boxes' ? 'Product SKU Library' : activeTab === 'pallets' ? 'Pallet Base Inventory' : 'SOS Integration Settings'}
+                  {activeTab === 'boxes' ? 'Product SKU Library' : activeTab === 'pallets' ? 'Pallet Base Inventory' : activeTab === 'standard_boxes' ? 'Standard Box Sizes' : activeTab === 'constraints' ? 'Build Constraints' : 'SOS Integration Settings'}
                 </h2>
                 <p className="text-slate-500 font-medium">
                   {activeTab === 'boxes' ? 'Manage dimensions and weight constants for individual boxes.' : 
                    activeTab === 'pallets' ? 'Manage standard pallet base dimensions and weights.' :
+                   activeTab === 'standard_boxes' ? 'Manage standard shipping boxes used for bulk consolidated orders.' :
+                   activeTab === 'constraints' ? 'Define maximum height, width, and length constraints for pallet builds.' :
                    'Configure the connection to SOS Inventory API for real-time SO fetching.'}
                 </p>
               </div>
               
               <div className="flex gap-2">
-                {activeTab !== 'sos' && (
+                {activeTab !== 'sos' && activeTab !== 'constraints' && (
                   <>
                     <button 
                       onClick={() => clearAll(activeTab as 'boxes' | 'pallets')}
@@ -344,7 +398,7 @@ export const AdminPanel = ({
                       <Download size={14} /> Export Excel
                     </button>
                     <button 
-                      onClick={activeTab === 'boxes' ? addBox : addPallet}
+                      onClick={activeTab === 'boxes' ? addBox : activeTab === 'pallets' ? addPallet : addStandardBox}
                       className="flex items-center gap-2 px-6 py-2 bg-slate-900 text-white hover:bg-slate-800 font-black text-[10px] uppercase tracking-widest rounded-sm shadow-xl transition-all"
                     >
                       <Plus size={14} /> Add New
@@ -422,17 +476,114 @@ export const AdminPanel = ({
                   </div>
                 </div>
               </div>
+            ) : activeTab === 'constraints' ? (
+              <div className="max-w-3xl">
+                <div className="bg-white border border-slate-200 rounded-sm shadow-sm p-8 space-y-8">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider mb-4">Build Constraints</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest text-slate-600">
+                          <Sliders size={12} className="text-indigo-500" /> Max Pallet Height Limit (inches)
+                        </label>
+                        <input 
+                          type="number" 
+                          value={tempSOS.maxPalletHeight !== undefined && tempSOS.maxPalletHeight !== null ? tempSOS.maxPalletHeight : ''}
+                          onChange={(e) => { 
+                            const val = e.target.value === '' ? undefined : parseInt(e.target.value);
+                            setTempSOS({ ...tempSOS, maxPalletHeight: val }); 
+                            setHasChanges(true); 
+                          }}
+                          placeholder="No height limit (Unlimited)"
+                          min="0"
+                          max="200"
+                          className="w-full bg-slate-50 border border-slate-200 p-3 rounded font-mono text-sm focus:border-indigo-500 outline-none transition-stroke"
+                        />
+                        <p className="text-[10px] text-slate-400 font-medium">Standard maximum build height limit including pallet tare height. Default is usually 92 inches.</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest text-slate-600">
+                          <Sliders size={12} className="text-indigo-500" /> Max Pallet Width Limit (inches)
+                        </label>
+                        <input 
+                          type="number" 
+                          value={tempSOS.maxPalletWidth !== undefined && tempSOS.maxPalletWidth !== null ? tempSOS.maxPalletWidth : ''}
+                          onChange={(e) => { 
+                            const val = e.target.value === '' ? undefined : parseInt(e.target.value);
+                            setTempSOS({ ...tempSOS, maxPalletWidth: val }); 
+                            setHasChanges(true); 
+                          }}
+                          placeholder="No width limit / Pallet Base Width"
+                          min="0"
+                          max="200"
+                          className="w-full bg-slate-50 border border-slate-200 p-3 rounded font-mono text-sm focus:border-indigo-500 outline-none transition-stroke"
+                        />
+                        <p className="text-[10px] text-slate-400 font-medium">Standard maximum build width limit. If not defined, the physical pallet base width is used.</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest text-slate-600">
+                          <Sliders size={12} className="text-indigo-500" /> Max Pallet Length Limit (inches)
+                        </label>
+                        <input 
+                          type="number" 
+                          value={tempSOS.maxPalletLength !== undefined && tempSOS.maxPalletLength !== null ? tempSOS.maxPalletLength : ''}
+                          onChange={(e) => { 
+                            const val = e.target.value === '' ? undefined : parseInt(e.target.value);
+                            setTempSOS({ ...tempSOS, maxPalletLength: val }); 
+                            setHasChanges(true); 
+                          }}
+                          placeholder="No length limit / Pallet Base Length"
+                          min="0"
+                          max="200"
+                          className="w-full bg-slate-50 border border-slate-200 p-3 rounded font-mono text-sm focus:border-indigo-500 outline-none transition-stroke"
+                        />
+                        <p className="text-[10px] text-slate-400 font-medium">Standard maximum build length limit. If not defined, the physical pallet base length is used.</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest text-slate-600">
+                          <Sliders size={12} className="text-indigo-500" /> Min Box Support Overlap (%)
+                        </label>
+                        <input 
+                          type="number" 
+                          value={tempSOS.minSupportOverlap !== undefined && tempSOS.minSupportOverlap !== null ? tempSOS.minSupportOverlap : ''}
+                          onChange={(e) => { 
+                            const val = e.target.value === '' ? undefined : parseInt(e.target.value);
+                            setTempSOS({ ...tempSOS, minSupportOverlap: val }); 
+                            setHasChanges(true); 
+                          }}
+                          placeholder="Standard (55%)"
+                          min="0"
+                          max="100"
+                          className="w-full bg-slate-50 border border-slate-200 p-3 rounded font-mono text-sm focus:border-indigo-500 outline-none transition-stroke"
+                        />
+                        <p className="text-[10px] text-slate-400 font-medium">Minimum contact surface area required with items below to allow support. Default standard is 55%.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 flex items-center gap-4 text-slate-500">
+                    <ShieldCheck className="text-emerald-500" size={24} />
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-600">Build Bounds Enforced</p>
+                      <p className="text-[10px] font-medium">If empty/cleared, no constraints are applied. These settings dynamically control 3D packing volumes and pallet requirements.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="bg-white border border-slate-200 rounded-sm shadow-sm overflow-hidden">
                <table className="w-full text-left border-collapse">
                  <thead>
                    <tr className="bg-slate-50 border-b border-slate-200">
                      <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                       {activeTab === 'boxes' ? 'SKU / Name' : 'Pallet Name'}
+                       {activeTab === 'boxes' ? 'SKU / Name' : activeTab === 'pallets' ? 'Pallet Name' : 'Box Name'}
                      </th>
                      <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Dimensions (L x W x H)</th>
                      <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                       {activeTab === 'boxes' ? 'Weight (lbs)' : 'Tare / Max Cape'}
+                       {activeTab === 'boxes' ? 'Weight (lbs)' : activeTab === 'pallets' ? 'Tare / Max Cape' : 'Capacity / Tare'}
                      </th>
                      <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest text-right">Actions</th>
                    </tr>
@@ -497,7 +648,7 @@ export const AdminPanel = ({
                          </td>
                        </tr>
                      ))
-                   ) : (
+                   ) : activeTab === 'pallets' ? (
                      tempPallets.map((pallet, index) => (
                        <tr key={`${pallet.id}-${index}`} className="hover:bg-slate-50/50 transition-colors">
                          <td className="px-6 py-4">
@@ -565,6 +716,74 @@ export const AdminPanel = ({
                          </td>
                        </tr>
                      ))
+                   ) : (
+                     tempStandardBoxes.map((box, index) => (
+                       <tr key={`${box.id}-${index}`} className="hover:bg-slate-50/50 transition-colors">
+                         <td className="px-6 py-4">
+                           <input 
+                             type="text" 
+                             value={box.name}
+                             onChange={(e) => updateStandardBox(box.id, { name: e.target.value })}
+                             className="block w-full text-sm font-black text-slate-900 bg-transparent border-none p-0 focus:ring-0 outline-none"
+                           />
+                           <div className="text-[10px] text-slate-400 font-mono uppercase">{box.id}</div>
+                         </td>
+                         <td className="px-6 py-4">
+                           <div className="flex items-center gap-2 font-mono text-xs font-bold text-slate-500">
+                             <input 
+                               type="number" 
+                               value={box.dimensions.length}
+                               onChange={(e) => updateStandardBox(box.id, { dimensions: { ...box.dimensions, length: Number(e.target.value) }})}
+                               className="w-12 bg-slate-50 border border-slate-200 rounded p-1"
+                             />
+                             <span>x</span>
+                             <input 
+                               type="number" 
+                               value={box.dimensions.width}
+                               onChange={(e) => updateStandardBox(box.id, { dimensions: { ...box.dimensions, width: Number(e.target.value) }})}
+                               className="w-12 bg-slate-50 border border-slate-200 rounded p-1"
+                             />
+                             <span>x</span>
+                             <input 
+                               type="number" 
+                               value={box.dimensions.height}
+                               onChange={(e) => updateStandardBox(box.id, { dimensions: { ...box.dimensions, height: Number(e.target.value) }})}
+                               className="w-12 bg-slate-50 border border-slate-200 rounded p-1"
+                             />
+                           </div>
+                         </td>
+                         <td className="px-6 py-4">
+                           <div className="flex items-center gap-4">
+                             <div>
+                               <div className="text-[8px] font-black text-slate-400 uppercase mb-0.5">Cap</div>
+                               <input 
+                                 type="number" 
+                                 value={box.weightCapacity}
+                                 onChange={(e) => updateStandardBox(box.id, { weightCapacity: Number(e.target.value) })}
+                                 className="w-16 bg-slate-50 border border-slate-200 rounded p-1 text-xs font-bold"
+                               />
+                             </div>
+                             <div>
+                               <div className="text-[8px] font-black text-slate-400 uppercase mb-0.5">Tare</div>
+                               <input 
+                                 type="number" 
+                                 value={box.tareWeight}
+                                 onChange={(e) => updateStandardBox(box.id, { tareWeight: Number(e.target.value) })}
+                                 className="w-16 bg-slate-50 border border-slate-200 rounded p-1 text-xs font-bold"
+                               />
+                             </div>
+                           </div>
+                         </td>
+                         <td className="px-6 py-4 text-right">
+                           <button 
+                             onClick={() => removeStandardBox(index)}
+                             className="p-2 text-slate-300 hover:text-rose-600 transition-colors"
+                           >
+                             <Trash2 size={18} />
+                           </button>
+                         </td>
+                       </tr>
+                     ))
                    )}
                  </tbody>
                </table>
@@ -574,12 +793,17 @@ export const AdminPanel = ({
                     <Package size={48} className="mx-auto text-slate-200 mb-4" />
                     <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">No boxes in library</p>
                  </div>
-               ) : tempPallets.length === 0 && (
+               ) : activeTab === 'pallets' ? tempPallets.length === 0 && (
                  <div className="p-12 text-center">
                     <LayoutGrid size={48} className="mx-auto text-slate-200 mb-4" />
                     <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">No pallets in inventory</p>
                  </div>
-               )}
+               ) : activeTab === 'standard_boxes' ? tempStandardBoxes.length === 0 && (
+                 <div className="p-12 text-center">
+                    <BoxIcon size={48} className="mx-auto text-slate-200 mb-4" />
+                    <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">No standard boxes configured</p>
+                 </div>
+               ) : null}
             </div>
            )}
           </div>

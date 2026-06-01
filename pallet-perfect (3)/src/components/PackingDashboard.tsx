@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Box, PackedItem, Pallet, BuildStep, SalesOrder, PalletBase, SOSConfig } from '../types';
+import { Box, PackedItem, Pallet, BuildStep, SalesOrder, PalletBase, SOSConfig, StandardBox } from '../types';
 import { packPallets } from '../lib/packing-logic';
 import { PalletViewer } from './PalletViewer';
 import { 
@@ -24,14 +24,18 @@ import {
   Minimize2,
   Edit3,
   RefreshCw,
-  History as HistoryIcon
+  History as HistoryIcon,
+  LogOut,
+  LayoutGrid,
+  Database
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { cn, formatInches, formatWeight } from '../lib/utils';
+import { cn, formatInches, formatWeight, getBoxWeight, getBoxSku, getBoxColor } from '../lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 import { extractItemsFromDocument, ExtractedItem } from '../lib/gemini';
+import { auth, signOut } from '../lib/firebase';
 
 // --- Subcomponent: Uploader ---
 const SO_Uploader = ({ onScan, onCancel }: { onScan: (items: { sku: string; quantity: number }[]) => void, onCancel: () => void }) => {
@@ -196,7 +200,19 @@ const SO_Uploader = ({ onScan, onCancel }: { onScan: (items: { sku: string; quan
 };
 
 // --- Subcomponent: Input Step ---
-const InputStep = ({ boxLibrary, sosConfig, onNext }: { boxLibrary: Box[], sosConfig: SOSConfig, onNext: (items: { sku: string; quantity: number }[]) => void }) => {
+const InputStep = ({ 
+  boxLibrary, 
+  sosConfig, 
+  onNext,
+  packingMode,
+  onPackingModeChange
+}: { 
+  boxLibrary: Box[], 
+  sosConfig: SOSConfig, 
+  onNext: (items: { sku: string; quantity: number }[]) => void,
+  packingMode: 'individual' | 'bulk',
+  onPackingModeChange: (mode: 'individual' | 'bulk') => void
+}) => {
   const [view, setView] = useState<'selection' | 'camera' | 'sos' | 'list'>('selection');
   const [poNumber, setPoNumber] = useState('');
   const [items, setItems] = useState<{ sku: string; quantity: number }[]>([]);
@@ -378,9 +394,32 @@ const InputStep = ({ boxLibrary, sosConfig, onNext }: { boxLibrary: Box[], sosCo
           <button onClick={() => setView('selection')} className="p-1 hover:bg-slate-100 rounded-full text-slate-400">
             <ArrowLeft size={16} />
           </button>
-          <div>
-            <h2 className="text-slate-500 font-bold uppercase tracking-wider text-xs">Verify Sales Order</h2>
-            <p className="text-slate-400 text-[10px] mt-1 font-medium italic">Adjust quantities if items were physically checked</p>
+          <div className="flex items-center gap-6">
+            <div>
+              <h2 className="text-slate-500 font-bold uppercase tracking-wider text-xs">Verify Sales Order</h2>
+              <p className="text-slate-400 text-[10px] mt-1 font-medium italic">Adjust quantities if items were physically checked</p>
+            </div>
+            
+            <div className="flex bg-slate-100 p-1 rounded-sm border border-slate-200">
+              <button 
+                onClick={() => onPackingModeChange('individual')}
+                className={cn(
+                  "px-3 py-1.5 rounded-sm text-[9px] font-black uppercase tracking-widest transition-all",
+                  packingMode === 'individual' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600"
+                )}
+              >
+                Individual
+              </button>
+              <button 
+                onClick={() => onPackingModeChange('bulk')}
+                className={cn(
+                  "px-3 py-1.5 rounded-sm text-[9px] font-black uppercase tracking-widest transition-all",
+                  packingMode === 'bulk' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600"
+                )}
+              >
+                Bulk
+              </button>
+            </div>
           </div>
         </div>
         <div className="flex gap-2">
@@ -457,13 +496,15 @@ const ConfirmationGate = ({
   palletLibrary,
   items, 
   onConfirm, 
-  onBack 
+  onBack,
+  sosConfig
 }: { 
   boxLibrary: Box[], 
   palletLibrary: PalletBase[],
   items: { sku: string; quantity: number }[], 
   onConfirm: (palletBases: PalletBase[]) => void, 
-  onBack: () => void 
+  onBack: () => void,
+  sosConfig: SOSConfig
 }) => {
   const boxesToPack = useMemo(() => {
     return items
@@ -489,7 +530,7 @@ const ConfirmationGate = ({
         if (!canFitLarge) return { ...p, count: Infinity, area: Infinity };
 
         // Run full packing simulation to get accurate count
-        const packingResult = packPallets(boxesToPack, p.dimensions);
+        const packingResult = packPallets(boxesToPack, p.dimensions, sosConfig.maxPalletHeight, sosConfig.maxPalletWidth, sosConfig.maxPalletLength, sosConfig.minSupportOverlap);
         const count = packingResult.length;
         const area = p.dimensions.length * p.dimensions.width;
         
@@ -501,15 +542,15 @@ const ConfirmationGate = ({
         // Secondary: minimize footprint area
         return a.area - b.area;
       });
-  }, [boxesToPack, palletLibrary]);
+  }, [boxesToPack, palletLibrary, sosConfig]);
 
   const initialEstimate = useMemo(() => {
     const best = recommendations[0] || palletLibrary[0];
     if (!best || boxesToPack.length === 0) return 1;
     // Run a dry run packing with the best recommended base to get an accurate starting count
-    const result = packPallets(boxesToPack, best.dimensions);
+    const result = packPallets(boxesToPack, best.dimensions, sosConfig.maxPalletHeight, sosConfig.maxPalletWidth, sosConfig.maxPalletLength, sosConfig.minSupportOverlap);
     return Math.max(1, result.length);
-  }, [recommendations, palletLibrary, boxesToPack]);
+  }, [recommendations, palletLibrary, boxesToPack, sosConfig]);
 
   const [pallets, setPallets] = useState<PalletBase[]>([]);
   const [approvedPallets, setApprovedPallets] = useState<Set<number>>(new Set<number>());
@@ -529,7 +570,7 @@ const ConfirmationGate = ({
 
     // Use current selection of bases for the packing logic
     const bases = pallets.map(p => p.dimensions);
-    const packingResult = packPallets(boxesToPack, bases);
+    const packingResult = packPallets(boxesToPack, bases, sosConfig.maxPalletHeight, sosConfig.maxPalletWidth, sosConfig.maxPalletLength, sosConfig.minSupportOverlap);
     const requiredCount = Math.max(1, packingResult.length);
 
     if (requiredCount > pallets.length) {
@@ -792,17 +833,243 @@ const ConfirmationGate = ({
   );
 };
 
+// --- Subcomponent: Consolidation Step ---
+const ConsolidationStep = ({ 
+  orderItems, 
+  boxLibrary, 
+  standardBoxLibrary, 
+  onNext, 
+  onBack 
+}: { 
+  orderItems: { sku: string; quantity: number }[],
+  boxLibrary: Box[],
+  standardBoxLibrary: StandardBox[],
+  onNext: (items: { sku: string; quantity: number }[]) => void,
+  onBack: () => void
+}) => {
+  const [containers, setContainers] = useState<{ boxId: string; items: { sku: string; quantity: number }[] }[]>([]);
+  const [selectedBoxId, setSelectedBoxId] = useState<string>(standardBoxLibrary[0]?.id || '');
+
+  // Calculate remaining items
+  const remainingItems = useMemo(() => {
+    const counts = new Map<string, number>();
+    orderItems.forEach(item => counts.set(item.sku, item.quantity));
+    
+    containers.forEach(c => {
+      c.items.forEach(item => {
+        const current = counts.get(item.sku) || 0;
+        counts.set(item.sku, Math.max(0, current - item.quantity));
+      });
+    });
+
+    return Array.from(counts.entries())
+      .map(([sku, quantity]) => ({ sku, quantity }))
+      .filter(item => item.quantity > 0);
+  }, [orderItems, containers]);
+
+  const addContainer = () => {
+    if (!selectedBoxId) return;
+    setContainers([...containers, { boxId: selectedBoxId, items: [] }]);
+  };
+
+  const removeItemFromContainer = (cIdx: number, iIdx: number) => {
+    const newContainers = [...containers];
+    newContainers[cIdx].items.splice(iIdx, 1);
+    setContainers(newContainers);
+  };
+
+  const addItemToContainer = (cIdx: number, sku: string) => {
+    const newContainers = [...containers];
+    const existing = newContainers[cIdx].items.find(i => i.sku === sku);
+    const rem = remainingItems.find(i => i.sku === sku);
+    if (!rem || rem.quantity <= 0) return;
+
+    if (existing) {
+      existing.quantity += 1;
+    } else {
+      newContainers[cIdx].items.push({ sku, quantity: 1 });
+    }
+    setContainers(newContainers);
+  };
+
+  const removeContainer = (idx: number) => {
+    setContainers(containers.filter((_, i) => i !== idx));
+  };
+
+  const handleFinish = () => {
+    // Convert containers to "Items to Pack" 
+    // In this simplified version, we treat each container as a unique SKU for the pallet packer
+    // We'll create temporary boxes for the packer based on the standard box dimensions
+    const finalItemsToPack: { sku: string, quantity: number }[] = containers.map((c, i) => {
+      const box = standardBoxLibrary.find(b => b.id === c.boxId);
+      return {
+        // We Use a special ID for consolidated boxes
+        sku: `CONSOLIDATED-${box?.name}-${i}`,
+        quantity: 1
+      };
+    });
+
+    // Also include any remaining items as individual boxes? 
+    // Actually the user says "what items from that SO will be going in each box size"
+    // suggesting they want full control.
+    onNext(finalItemsToPack);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white p-6 rounded-sm border border-slate-200 shadow-sm flex justify-between items-center">
+        <div>
+          <h2 className="text-slate-900 font-bold uppercase tracking-widest text-xs flex items-center gap-2">
+            <LayoutGrid size={18} className="text-indigo-600" /> Container Consolidation
+          </h2>
+          <p className="text-slate-400 text-xs mt-1 font-medium">Pack multiple parts into standard shipping boxes.</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <select 
+            value={selectedBoxId}
+            onChange={(e) => setSelectedBoxId(e.target.value)}
+            className="bg-slate-50 border border-slate-200 p-2 rounded-sm text-xs font-bold uppercase outline-none focus:border-indigo-600"
+          >
+            {standardBoxLibrary.map(b => (
+              <option key={b.id} value={b.id}>{b.name} ({b.dimensions.length}"x{b.dimensions.width}"x{b.dimensions.height}")</option>
+            ))}
+          </select>
+          <button 
+            onClick={addContainer}
+            className="px-4 py-2 bg-slate-900 text-white font-black uppercase text-[10px] tracking-widest rounded-sm flex items-center gap-2 hover:bg-slate-800 transition-colors"
+          >
+            <Plus size={16} /> Add Box
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-12 gap-8">
+        {/* Left: Remaining Items */}
+        <div className="col-span-4 space-y-4">
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Items to Assign</h3>
+          <div className="bg-white border border-slate-200 rounded-sm overflow-hidden h-[500px] overflow-y-auto">
+            {remainingItems.length === 0 ? (
+              <div className="p-8 text-center text-slate-300">
+                <CheckCircle2 size={32} className="mx-auto mb-2 opacity-20" />
+                <p className="text-[10px] font-bold uppercase">All Items Assigned</p>
+              </div>
+            ) : (
+              remainingItems.map(item => (
+                <div key={item.sku} className="p-4 border-b border-slate-50 flex justify-between items-center group">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">{item.sku}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} Remaining</p>
+                  </div>
+                  <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+                    {containers.map((_, cIdx) => (
+                      <button 
+                        key={cIdx}
+                        onClick={() => addItemToContainer(cIdx, item.sku)}
+                        className="w-6 h-6 bg-indigo-50 text-indigo-600 rounded flex items-center justify-center font-bold text-[10px] hover:bg-indigo-600 hover:text-white transition-colors"
+                        title={`Add to Box ${cIdx + 1}`}
+                      >
+                        {cIdx + 1}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Right: Box Assignments */}
+        <div className="col-span-8 flex flex-wrap gap-4 h-[600px] overflow-y-auto content-start">
+          {containers.map((c, cIdx) => {
+            const box = standardBoxLibrary.find(b => b.id === c.boxId);
+            return (
+              <div key={cIdx} className="w-[calc(50%-8px)] bg-white border border-slate-200 rounded-sm p-4 relative group">
+                <button 
+                  onClick={() => removeContainer(cIdx)}
+                  className="absolute top-2 right-2 p-1 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X size={14} />
+                </button>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 bg-slate-900 text-white rounded flex items-center justify-center font-black text-xs">{cIdx + 1}</div>
+                  <div>
+                    <h4 className="text-[10px] font-black uppercase text-slate-900 leading-none">{box?.name}</h4>
+                    <p className="text-[8px] text-slate-400 font-mono mt-1">
+                      {box?.dimensions.length}x{box?.dimensions.width}x{box?.dimensions.height}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="space-y-2 min-h-[100px] bg-slate-50/50 rounded p-2 border border-dashed border-slate-100">
+                  {c.items.length === 0 ? (
+                    <p className="text-[9px] text-slate-300 italic text-center py-8">Empty Container</p>
+                  ) : (
+                    c.items.map((item, iIdx) => (
+                      <div key={iIdx} className="flex justify-between items-center bg-white p-2 rounded border border-slate-100 text-[10px]">
+                        <span className="font-bold text-slate-600">{item.sku}</span>
+                        <div className="flex items-center gap-2">
+                           <span className="font-black text-indigo-600">x{item.quantity}</span>
+                           <button onClick={() => removeItemFromContainer(cIdx, iIdx)} className="text-slate-200 hover:text-rose-400">
+                             <Trash2 size={12} />
+                           </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          
+          <button 
+            onClick={addContainer}
+            className="w-[calc(50%-8px)] border-2 border-dashed border-slate-100 rounded-sm aspect-video flex flex-col items-center justify-center text-slate-400 hover:border-indigo-200 hover:text-indigo-400 transition-all bg-white/50"
+          >
+            <Plus size={32} className="mb-2 opacity-20" />
+            <span className="text-[10px] font-black uppercase tracking-widest leading-none">Add Box {containers.length + 1}</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/80 backdrop-blur-md border-t border-slate-200 flex justify-center z-50">
+        <div className="max-w-4xl w-full flex gap-4">
+          <button 
+            onClick={onBack}
+            className="flex-1 py-4 bg-white text-slate-500 hover:text-slate-900 font-bold uppercase tracking-widest rounded-sm border border-slate-200 transition-colors flex items-center justify-center gap-2"
+          >
+            <ArrowLeft size={18} /> EDIT SALES ORDER
+          </button>
+          <button 
+            onClick={handleFinish}
+            disabled={containers.length === 0}
+            className={cn(
+              "flex-[2] py-4 font-black uppercase tracking-[0.2em] rounded-sm transition-all flex items-center justify-center gap-2 shadow-xl",
+              containers.length === 0
+                ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                : "bg-indigo-600 hover:bg-slate-900 text-white shadow-indigo-100"
+            )}
+          >
+            CONFIRM CONSOLIDATION <ChevronRight size={18} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- Subcomponent: Packing Step ---
 const PackingStep = ({ 
   pallets, 
   onComplete, 
   onReCalculate,
-  onPalletUpdate
+  onPalletUpdate,
+  sosConfig
 }: { 
   pallets: Pallet[], 
   onComplete: () => void, 
   onReCalculate: () => void,
-  onPalletUpdate: (palletIdx: number, items: PackedItem[]) => void
+  onPalletUpdate: (palletIdx: number, items: PackedItem[]) => void,
+  sosConfig: SOSConfig
 }) => {
   const [currentPalletIdx, setCurrentPalletIdx] = useState(0);
   if (pallets.length === 0) {
@@ -844,7 +1111,15 @@ const PackingStep = ({
     const boxesToPack = itemsToRemove.map(it => it.box);
 
     const { repackPallet } = await import('../lib/packing-logic');
-    const newItems = repackPallet(itemsToKeepFixed, boxesToPack, currentPallet.dimensions);
+    const newItems = repackPallet(
+      itemsToKeepFixed, 
+      boxesToPack, 
+      currentPallet.dimensions, 
+      sosConfig.maxPalletHeight, 
+      sosConfig.maxPalletWidth, 
+      sosConfig.maxPalletLength,
+      sosConfig.minSupportOverlap
+    );
     
     onPalletUpdate(currentPalletIdx, newItems);
   };
@@ -882,7 +1157,7 @@ const PackingStep = ({
     return {
       efficiency,
       buildHeight,
-      totalWeight: productItems.reduce((sum, i) => sum + i.box.weight, 0) + currentPallet.tareWeight,
+      totalWeight: productItems.reduce((sum, i) => sum + getBoxWeight(i.box), 0) + currentPallet.tareWeight,
     };
   }, [currentPallet]);
 
@@ -940,7 +1215,7 @@ const PackingStep = ({
                     isActive ? "animate-pulse" : "bg-slate-100 text-slate-400"
                   )}
                   style={{ 
-                    backgroundColor: !isScanned ? item.box.color || '#3b82f6' : undefined,
+                    backgroundColor: !isScanned ? getBoxColor(item.box) : undefined,
                     color: !isScanned ? '#fff' : undefined,
                     border: isActive ? '2px solid #4f46e5' : 'none'
                   }}
@@ -949,10 +1224,10 @@ const PackingStep = ({
                 </div>
                 <div>
                   <p className={cn("font-bold text-sm leading-tight", isActive ? "text-indigo-900" : "text-slate-900")}>
-                    {item.box.sku}
+                    {getBoxSku(item.box)}
                   </p>
                   <p className={cn("text-[10px] mt-0.5 uppercase font-medium", isActive ? "text-indigo-700" : "text-slate-400")}>
-                    {item.box.dimensions.length}"x{item.box.dimensions.width}"x{item.box.dimensions.height}" • {item.box.weight} LBS
+                    {item.box.dimensions.length}"x{item.box.dimensions.width}"x{item.box.dimensions.height}" • {getBoxWeight(item.box)} LBS
                   </p>
                   {isActive && (
                     <div className="mt-2 text-[8px] font-bold text-indigo-400 uppercase tracking-widest flex items-center gap-1 animate-pulse">
@@ -978,6 +1253,7 @@ const PackingStep = ({
           }))}
           activePalletIdx={currentPalletIdx}
           landmarksVisible={true} 
+          maxPalletHeight={sosConfig.maxPalletHeight || 92}
         />
         
         <div className="absolute top-4 right-4 flex flex-col items-end opacity-60 group-hover:opacity-100 transition-opacity pointer-events-none">
@@ -1010,7 +1286,7 @@ const PackingStep = ({
               <span className="text-3xl font-mono font-bold tracking-tighter text-indigo-600">
                 {metrics.buildHeight.toFixed(2)}"
               </span>
-              <span className="text-slate-300 font-bold text-xs">/ 92"</span>
+              <span className="text-slate-300 font-bold text-xs">/ {sosConfig.maxPalletHeight || 92}"</span>
             </div>
           </div>
 
@@ -1091,37 +1367,71 @@ const PackingStep = ({
 export const PackingDashboard = ({ 
   boxLibrary, 
   palletLibrary,
+  standardBoxLibrary,
   sosConfig,
   onOpenAdmin
 }: { 
   boxLibrary: Box[], 
   palletLibrary: PalletBase[],
+  standardBoxLibrary: StandardBox[],
   sosConfig: SOSConfig,
   onOpenAdmin: () => void
 }) => {
   const [step, setStep] = useState<BuildStep>('input');
   const [orderItems, setOrderItems] = useState<{ sku: string; quantity: number }[]>([]);
+  const [packingMode, setPackingMode] = useState<'individual' | 'bulk'>('individual');
   const [pallets, setPallets] = useState<Pallet[]>([]);
   const [bolNumber, setBolNumber] = useState('');
   const [currentPalletBases, setCurrentPalletBases] = useState<PalletBase[]>([]);
 
   const handleOptimization = (items: { sku: string; quantity: number }[]) => {
     setOrderItems(items);
+    if (packingMode === 'bulk') {
+      setStep('consolidation');
+    } else {
+      setStep('confirmation');
+    }
+  };
+
+  const handleConsolidationComplete = (consolidatedItems: { sku: string, quantity: number }[]) => {
+    // In bulk mode, we pack the consolidated boxes
+    setOrderItems(consolidatedItems);
     setStep('confirmation');
   };
 
   const handleBuild = (palletBases: PalletBase[]) => {
     const basesToUse = palletBases || currentPalletBases;
     const boxesToPack = orderItems
-      .map(oi => ({
-        box: boxLibrary.find(s => s.sku === oi.sku),
-        quantity: oi.quantity
-      }))
+      .map(oi => {
+        // Find in box library or standard box library (if it's a consolidated box)
+        if (oi.sku.startsWith('CONSOLIDATED-')) {
+          const parts = oi.sku.split('-');
+          const boxName = parts[1];
+          const stdBox = standardBoxLibrary.find(b => b.name === boxName);
+          if (stdBox) {
+            return {
+              box: stdBox,
+              quantity: oi.quantity
+            };
+          }
+        }
+        return {
+          box: boxLibrary.find(s => s.sku === oi.sku),
+          quantity: oi.quantity
+        };
+      })
       .filter(item => item && item.box && item.box.dimensions) as { box: Box; quantity: number }[];
 
     if (boxesToPack.length === 0) return;
 
-    const optimized = packPallets(boxesToPack, basesToUse.map(b => b.dimensions));
+    const optimized = packPallets(
+      boxesToPack, 
+      basesToUse.map(b => b.dimensions), 
+      sosConfig.maxPalletHeight, 
+      sosConfig.maxPalletWidth, 
+      sosConfig.maxPalletLength,
+      sosConfig.minSupportOverlap
+    );
     
     if (optimized.length > 0) {
       setCurrentPalletBases(basesToUse);
@@ -1143,10 +1453,10 @@ export const PackingDashboard = ({
     doc.setFontSize(22);
     doc.text('PALLET PERFECT MANIFEST', 15, 25);
     doc.setFontSize(10);
-    doc.text(`BOL/PRO: ${bolNumber || 'NOT ASSIGNED'}`, 15, 33);
+    doc.text(`SO NUMBER: ${bolNumber || 'NOT ASSIGNED'}`, 15, 33);
     
     // Logistics Summary Table
-    const totalWeight = pallets.reduce((sum, p) => sum + p.items.reduce((bSum, item) => bSum + item.box.weight, 0) + p.tareWeight, 0);
+    const totalWeight = pallets.reduce((sum, p) => sum + p.items.reduce((bSum, item) => bSum + getBoxWeight(item.box), 0) + p.tareWeight, 0);
     const maxBuildHeight = pallets.reduce((max, p) => Math.max(max, p.items.reduce((h, item) => Math.max(h, item.position.z + item.dimensions.height), 0)), 0);
 
     autoTable(doc, {
@@ -1156,7 +1466,7 @@ export const PackingDashboard = ({
         ['Total Pallets Staged', pallets.length.toString()],
         ['Gross Shipment Weight', formatWeight(totalWeight)],
         ['Max Build Height (All)', formatInches(maxBuildHeight)],
-        ['Assigned BOL Number', bolNumber || 'NOT ASSIGNED'],
+        ['Assigned SO Number', bolNumber || 'NOT ASSIGNED'],
       ],
       theme: 'grid',
       headStyles: { fillColor: [71, 85, 105] } // slate-600
@@ -1179,7 +1489,7 @@ export const PackingDashboard = ({
       doc.setFont('helvetica', 'bold');
       doc.text(`PALLET ${pIdx + 1} OF ${pallets.length}`, 20, currentY + 7);
       
-      const palletWeight = pallet.items.reduce((sum, item) => sum + item.box.weight, 0) + pallet.tareWeight;
+      const palletWeight = pallet.items.reduce((sum, item) => sum + getBoxWeight(item.box), 0) + pallet.tareWeight;
       const palletZHeights = pallet.items.map(item => item.position.z + item.dimensions.height);
       const palletHeight = palletZHeights.length > 0 ? Math.max(...palletZHeights) : pallet.dimensions.height;
 
@@ -1191,11 +1501,13 @@ export const PackingDashboard = ({
       // Pallet Detail Table
       const palletItemsMap = new Map<string, { name: string, qty: number, weight: number }>();
       pallet.items.forEach(item => {
-        const existing = palletItemsMap.get(item.box.sku) || { name: item.box.name, qty: 0, weight: 0 };
-        palletItemsMap.set(item.box.sku, {
+        const sku = getBoxSku(item.box);
+        const weight = getBoxWeight(item.box);
+        const existing = palletItemsMap.get(sku) || { name: item.box.name, qty: 0, weight: 0 };
+        palletItemsMap.set(sku, {
           name: item.box.name,
           qty: existing.qty + 1,
-          weight: existing.weight + item.box.weight
+          weight: existing.weight + weight
         });
       });
 
@@ -1255,7 +1567,7 @@ export const PackingDashboard = ({
           <div>
             <h1 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pallet Perfect Engineer</h1>
             <p className="text-base font-bold tracking-tight flex items-center gap-2">
-               {bolNumber ? `BOL: #${bolNumber}` : 'New Batch Request'} 
+               {bolNumber ? `SO: #${bolNumber}` : 'New Batch Request'} 
                <span className="text-slate-200 font-normal">|</span> 
                <span className="text-slate-500 font-medium">Shellz Logistics</span>
             </p>
@@ -1269,6 +1581,13 @@ export const PackingDashboard = ({
             title="Warehouse Admin"
           >
             <Settings size={20} className="group-hover:rotate-90 transition-transform duration-500" />
+          </button>
+          <button 
+            onClick={signOut}
+            className="p-2 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-sm transition-all"
+            title="Sign Out"
+          >
+             <LogOut size={20} />
           </button>
         </div>
 
@@ -1321,6 +1640,21 @@ export const PackingDashboard = ({
                   boxLibrary={boxLibrary} 
                   sosConfig={sosConfig}
                   onNext={handleOptimization} 
+                  packingMode={packingMode}
+                  onPackingModeChange={setPackingMode}
+                />
+              </div>
+            </motion.div>
+          )}
+          {step === 'consolidation' && (
+            <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }}>
+               <div className="max-w-5xl mx-auto">
+                <ConsolidationStep 
+                  orderItems={orderItems} 
+                  boxLibrary={boxLibrary}
+                  standardBoxLibrary={standardBoxLibrary}
+                  onNext={handleConsolidationComplete} 
+                  onBack={() => setStep('input')} 
                 />
               </div>
             </motion.div>
@@ -1334,6 +1668,7 @@ export const PackingDashboard = ({
                   items={orderItems} 
                   onConfirm={handleBuild} 
                   onBack={() => setStep('input')} 
+                  sosConfig={sosConfig}
                 />
               </div>
             </motion.div>
@@ -1354,6 +1689,7 @@ export const PackingDashboard = ({
                   newPallets[idx] = { ...newPallets[idx], items };
                   setPallets(newPallets);
                 }}
+                sosConfig={sosConfig}
               />
             </motion.div>
           )}
@@ -1370,7 +1706,7 @@ export const PackingDashboard = ({
                 <div className="grid grid-cols-3 gap-4 text-left border-y border-slate-100 py-8 my-8">
                   <div>
                     <p className="text-slate-400 text-[10px] uppercase font-black tracking-widest mb-1">Total Weight</p>
-                    <p className="text-slate-900 font-mono font-bold text-xl">{formatWeight(pallets.reduce((s, p) => s + p.items.reduce((i, it) => i + it.box.weight, 0) + p.tareWeight, 0))}</p>
+                    <p className="text-slate-900 font-mono font-bold text-xl">{formatWeight(pallets.reduce((s, p) => s + p.items.reduce((i, it) => i + getBoxWeight(it.box), 0) + p.tareWeight, 0))}</p>
                   </div>
                   <div>
                     <p className="text-slate-400 text-[10px] uppercase font-black tracking-widest mb-1">Total Items</p>
@@ -1384,13 +1720,13 @@ export const PackingDashboard = ({
 
                 <div className="space-y-4">
                   <div className="text-left bg-slate-50 p-6 rounded-sm border border-slate-100">
-                    <label className="text-[10px] uppercase font-black text-slate-500 mb-2 block">Final Ship Record (BOL/PRO #)</label>
+                    <label className="text-[10px] uppercase font-black text-slate-500 mb-2 block">Final Ship Record (SO Number)</label>
                     <div className="flex gap-4">
                        <input 
                         type="text" 
                         value={bolNumber}
                         onChange={(e) => setBolNumber(e.target.value)}
-                        placeholder="ENTER TRACKING ID"
+                        placeholder="ENTER SO ID"
                         className="flex-1 bg-white border border-slate-200 p-3 rounded-sm font-mono text-slate-900 text-sm focus:border-indigo-600 outline-none transition-colors"
                       />
                       <button 
