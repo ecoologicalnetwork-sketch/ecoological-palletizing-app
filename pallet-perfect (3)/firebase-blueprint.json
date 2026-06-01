@@ -1,0 +1,101 @@
+{
+  "entities": {
+    "Box": {
+      "title": "Box",
+      "description": "Product SKU dimensions and weights",
+      "type": "object",
+      "properties": {
+        "sku": { "type": "string" },
+        "name": { "type": "string" },
+        "dimensions": {
+          "type": "object",
+          "properties": {
+            "length": { "type": "number" },
+            "width": { "type": "number" },
+            "height": { "type": "number" }
+          },
+          "required": ["length", "width", "height"]
+        },
+        "weight": { "type": "number" },
+        "color": { "type": "string" }
+      },
+      "required": ["sku", "name", "dimensions", "weight"]
+    },
+    "PalletBase": {
+      "title": "PalletBase",
+      "description": "Pallet dimensions and weight capacities",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "dimensions": {
+          "type": "object",
+          "properties": {
+            "length": { "type": "number" },
+            "width": { "type": "number" },
+            "height": { "type": "number" }
+          },
+          "required": ["length", "width", "height"]
+        },
+        "tareWeight": { "type": "number" },
+        "maxWeight": { "type": "number" }
+      },
+      "required": ["id", "name", "dimensions", "tareWeight", "maxWeight"]
+    },
+    "SOSConfig": {
+      "title": "SOSConfig",
+      "description": "SOS Inventory integration settings",
+      "type": "object",
+      "properties": {
+        "apiKey": { "type": "string" },
+        "userId": { "type": "string" },
+        "accountId": { "type": "string" },
+        "environment": { "type": "string", "enum": ["production", "sandbox"] },
+        "maxPalletHeight": { "type": "number" },
+        "maxPalletWidth": { "type": "number" },
+        "maxPalletLength": { "type": "number" },
+        "minSupportOverlap": { "type": "number" }
+      },
+      "required": ["apiKey", "userId", "accountId", "environment"]
+    },
+    "StandardBox": {
+      "title": "StandardBox",
+      "description": "Fixed dimension boxes used for bulk packing",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "dimensions": {
+          "type": "object",
+          "properties": {
+            "length": { "type": "number" },
+            "width": { "type": "number" },
+            "height": { "type": "number" }
+          },
+          "required": ["length", "width", "height"]
+        },
+        "weightCapacity": { "type": "number" },
+        "tareWeight": { "type": "number" }
+      },
+      "required": ["id", "name", "dimensions", "weightCapacity", "tareWeight"]
+    }
+  },
+  "firestore": {
+    "/boxLibrary/{sku}": {
+      "schema": "Box",
+      "description": "Collection of all available box types"
+    },
+    "/palletLibrary/{id}": {
+      "schema": "PalletBase",
+      "description": "Collection of all available pallet sizes"
+    },
+    "/standardBoxLibrary/{id}": {
+      "schema": "StandardBox",
+      "description": "Collection of standard shipping boxes"
+    },
+    "/config/settings": {
+      "schema": "SOSConfig",
+      "description": "Global application settings including SOS credentials"
+    }
+  }
+}

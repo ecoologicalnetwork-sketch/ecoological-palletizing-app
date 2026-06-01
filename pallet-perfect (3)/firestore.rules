@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\- ]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // Box Library Rules
+    match /boxLibrary/{sku} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && 
+        incoming().sku is string && 
+        incoming().name is string && 
+        incoming().dimensions.length is number &&
+        incoming().dimensions.width is number &&
+        incoming().dimensions.height is number &&
+        incoming().weight is number;
+    }
+
+    // Pallet Library Rules
+    match /palletLibrary/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && 
+        incoming().id is string && 
+        incoming().name is string && 
+        incoming().dimensions.length is number &&
+        incoming().dimensions.width is number &&
+        incoming().dimensions.height is number &&
+        incoming().tareWeight is number &&
+        incoming().maxWeight is number;
+    }
+
+    // Standard Box Library Rules
+    match /standardBoxLibrary/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && 
+        incoming().id is string && 
+        incoming().name is string && 
+        incoming().dimensions.length is number &&
+        incoming().dimensions.width is number &&
+        incoming().dimensions.height is number &&
+        incoming().weightCapacity is number &&
+        incoming().tareWeight is number;
+    }
+
+    // Config Rules
+    match /config/settings {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() &&
+        incoming().apiKey is string &&
+        incoming().userId is string &&
+        incoming().accountId is string &&
+        incoming().environment in ['production', 'sandbox'] &&
+        (!('maxPalletHeight' in incoming()) || incoming().maxPalletHeight is number) &&
+        (!('maxPalletWidth' in incoming()) || incoming().maxPalletWidth is number) &&
+        (!('maxPalletLength' in incoming()) || incoming().maxPalletLength is number) &&
+        (!('minSupportOverlap' in incoming()) || incoming().minSupportOverlap is number);
+    }
+  }
+}
