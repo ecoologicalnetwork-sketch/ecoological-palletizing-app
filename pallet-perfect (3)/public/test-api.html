@@ -1,0 +1,14 @@
+<!DOCTYPE html><html><head><title>API Test</title></head><body><h2>POST /api/extract - Test</h2><pre id=out>Running...</pre><script>
+// A real 1x1 white JPEG base64
+const b64 = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAARCAABAAEDASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAABgUEB//EAB8QAAICAgMBAQAAAAAAAAAAAAECAxEEBRIhMf/EABQBAQAAAAAAAAAAAAAAAAAAAAD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwABptVe3QooA74CN5jtYoUUrNTJfgAB//2Q==';
+fetch('/api/extract', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({mimeType: 'image/jpeg', base64Data: b64})
+}).then(async r => {
+  const text = await r.text();
+  document.getElementById('out').textContent = 'STATUS: ' + r.status + '\n\nRESPONSE BODY:\n' + text;
+}).catch(e => {
+  document.getElementById('out').textContent = 'ERROR: ' + e;
+});
+</script></body></html>
