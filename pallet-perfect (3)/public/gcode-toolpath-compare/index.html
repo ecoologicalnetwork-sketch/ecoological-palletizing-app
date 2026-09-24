@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>G-Code Toolpath Compare</title>
+<style>
+:root{--bg:#eef2f6;--panel:#fff;--ink:#14202b;--muted:#64748b;--line:#d8e0e8;--a:#1f2937;--b:#2563eb;--accent:#0f766e;--danger:#b91c1c}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}
+.app{max-width:1500px;margin:0 auto;padding:18px}
+.topbar{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+h1{font-size:24px;margin:0 0 5px}.subtitle{color:var(--muted);font-size:13px;margin:0;max-width:850px}.privacy{font-size:12px;color:var(--muted);padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.loaders{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;box-shadow:0 1px 2px rgba(15,23,42,.04)}.card.a{border-top:4px solid var(--a)}.card.b{border-top:4px solid var(--b)}
+.fileRow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.fileBtn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:9px;border:1px solid var(--line);background:#f8fafc;cursor:pointer;font-weight:650}.fileBtn:hover{background:#f1f5f9}.fileBtn input{display:none}.filename{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:460px}.stats{font-size:12px;color:var(--muted);margin-top:8px}
+.toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px;margin-bottom:12px}.toolbar button,.toolbar select{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 10px;color:var(--ink);cursor:pointer}.toolbar button.active{background:#e2e8f0;font-weight:700}.toolbar button:hover,.toolbar select:hover{background:#f8fafc}.toolbar .sep{height:24px;width:1px;background:var(--line);margin:0 3px}.toggle{display:inline-flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap}.legendDot{display:inline-block;width:24px;height:3px;border-radius:2px}.legendDot.a{background:var(--a)}.legendDot.b{background:var(--b)}
+.viewerWrap{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,.04)}#viewer{display:block;width:100%;height:640px;background:linear-gradient(#fff,#fbfdff);touch-action:none;cursor:grab}#viewer.dragging{cursor:grabbing}
+.timeline{padding:12px;border-top:1px solid var(--line);background:#fff}.timelineTop{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:8px}.timeline label{font-size:13px;font-weight:650}.timeline .readout{font-size:12px;color:var(--muted)}input[type=range]{width:100%}.miniControls{display:flex;gap:8px;align-items:center}.miniControls button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 9px;cursor:pointer}
+.footerMeta{display:flex;gap:18px;flex-wrap:wrap;padding:10px 2px;color:var(--muted);font-size:12px}.kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#e2e8f0;border-radius:5px;padding:1px 5px;color:#334155}
+@media(max-width:800px){.loaders{grid-template-columns:1fr}.topbar{flex-direction:column}.privacy{align-self:stretch}.filename{max-width:260px}#viewer{height:520px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div>
+      <h1>G-Code Toolpath Compare</h1>
+      <p class="subtitle">Compare an original CNC program against an experimental version in 2D or interactive 3D. Files stay in your browser and are not uploaded anywhere.</p>
+    </div>
+    <div class="privacy">Local-only file processing</div>
+  </div>
+  <div class="loaders">
+    <div class="card a">
+      <div class="fileRow"><strong>Program A — Original</strong><label class="fileBtn">Choose file<input id="fa" type="file" accept=".nc,.tap,.gcode,.txt,.sub,*/*"></label><span id="na" class="filename">No file loaded</span></div>
+      <div id="saMeta" class="stats">0 motion points</div>
+    </div>
+    <div class="card b">
+      <div class="fileRow"><strong>Program B — Experimental</strong><label class="fileBtn">Choose file<input id="fb" type="file" accept=".nc,.tap,.gcode,.txt,.sub,*/*"></label><span id="nb" class="filename">No file loaded</span></div>
+      <div id="sbMeta" class="stats">0 motion points</div>
+    </div>
+  </div>
+  <div class="toolbar">
+    <button data-view="3d" class="active">3D</button><button data-view="xy">Top XY</button><button data-view="xz">Side XZ</button><button data-view="yz">End YZ</button><span class="sep"></span>
+    <label class="toggle"><input id="showA" type="checkbox" checked><span class="legendDot a"></span> A</label><label class="toggle"><input id="showB" type="checkbox" checked><span class="legendDot b"></span> B</label><label class="toggle"><input id="showRapid" type="checkbox"> Rapid moves</label>
+    <span class="sep"></span><button id="fitBtn">Fit view</button><button id="reset3dBtn">Reset 3D</button><label class="toggle">Line width <select id="lineWidth"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+  </div>
+  <div class="viewerWrap">
+    <canvas id="viewer"></canvas>
+    <div class="timeline"><div class="timelineTop"><label>Program position</label><div class="miniControls"><button id="playBtn">▶ Play</button><button id="endBtn">End</button><span id="positionReadout" class="readout">100%</span></div></div><input id="progress" type="range" min="0" max="1000" value="1000" step="1" /></div>
+  </div>
+  <div class="footerMeta"><span>3D: drag to rotate · wheel to zoom · <span class="kbd">Shift</span> + drag to pan</span><span>2D: drag to pan · wheel to zoom</span><span id="boundsText">Load one or both programs.</span></div>
+</div>
+<script>
+(()=>{
+'use strict';
+const $=id=>document.getElementById(id),canvas=$('viewer'),ctx=canvas.getContext('2d');
+let A={name:'',pts:[]},B={name:'',pts:[]},view='3d',progress=1,showA=true,showB=true,showRapid=false,lineWidth=2,scale=1,panX=0,panY=0,rotX=-0.65,rotY=0.72,dragging=false,lastX=0,lastY=0,playing=false,playRAF=0,lastPlay=0;
+function stripComments(line){let out='',depth=0;for(const ch of line){if(ch==='('){depth++;continue}if(ch===')'){depth=Math.max(0,depth-1);continue}if(depth===0){if(ch===';')break;out+=ch}}return out}
+function parseGcode(text){const st={x:0,y:0,z:0,abs:true,motion:1,units:1},pts=[{x:0,y:0,z:0,type:'start',line:0}],lines=text.replace(/\r/g,'').split('\n');for(let li=0;li<lines.length;li++){const s=stripComments(lines[li]).toUpperCase();if(!s.trim())continue;const gs=[...s.matchAll(/G\s*([0-9]+(?:\.[0-9]+)?)/g)].map(m=>Number(m[1]));if(gs.some(g=>g===90))st.abs=true;if(gs.some(g=>g===91))st.abs=false;if(gs.some(g=>g===20))st.units=25.4;if(gs.some(g=>g===21))st.units=1;if(gs.some(g=>g===0))st.motion=0;if(gs.some(g=>g===1))st.motion=1;const vals={};for(const m of s.matchAll(/([XYZ])\s*([+\-]?(?:\d+(?:\.\d*)?|\.\d+))/g))vals[m[1].toLowerCase()]=Number(m[2])*st.units;if(!Object.keys(vals).length)continue;const next={x:st.x,y:st.y,z:st.z};for(const ax of ['x','y','z'])if(vals[ax]!==undefined)next[ax]=st.abs?vals[ax]:next[ax]+vals[ax];if(next.x===st.x&&next.y===st.y&&next.z===st.z)continue;st.x=next.x;st.y=next.y;st.z=next.z;pts.push({x:st.x,y:st.y,z:st.z,type:st.motion===0?'rapid':'feed',line:li+1})}return pts}
+function loadFile(input,target,key){const f=input.files?.[0];if(!f)return;target.textContent=f.name;const r=new FileReader();r.onload=()=>{const pts=parseGcode(String(r.result||''));if(key==='A')A={name:f.name,pts};else B={name:f.name,pts};updateMeta();fitView();draw()};r.readAsText(f)}
+$('fa').addEventListener('change',()=>loadFile($('fa'),$('na'),'A'));$('fb').addEventListener('change',()=>loadFile($('fb'),$('nb'),'B'));
+function visibleSets(){const out=[];if(showA&&A.pts.length)out.push(A.pts);if(showB&&B.pts.length)out.push(B.pts);return out.length?out:[A.pts.length?A.pts:B.pts].filter(Boolean)}
+function bounds(){const sets=visibleSets();if(!sets.length||!sets.some(s=>s.length))return null;let xmin=Infinity,xmax=-Infinity,ymin=Infinity,ymax=-Infinity,zmin=Infinity,zmax=-Infinity;for(const s of sets)for(const p of s){xmin=Math.min(xmin,p.x);xmax=Math.max(xmax,p.x);ymin=Math.min(ymin,p.y);ymax=Math.max(ymax,p.y);zmin=Math.min(zmin,p.z);zmax=Math.max(zmax,p.z)}if(!Number.isFinite(xmin))return null;return{xmin,xmax,ymin,ymax,zmin,zmax,cx:(xmin+xmax)/2,cy:(ymin+ymax)/2,cz:(zmin+zmax)/2}}
+function dataSpan(b){return Math.max(1,b.xmax-b.xmin,b.ymax-b.ymin,b.zmax-b.zmin)}function fitView(){scale=1;panX=0;panY=0;draw()}
+function updateMeta(){const fmt=o=>`${Math.max(0,o.pts.length-1).toLocaleString()} motion points`;$('saMeta').textContent=fmt(A);$('sbMeta').textContent=fmt(B);const b=bounds();$('boundsText').textContent=b?`X ${(b.xmax-b.xmin).toFixed(3)} · Y ${(b.ymax-b.ymin).toFixed(3)} · Z ${(b.zmax-b.zmin).toFixed(3)} mm span`:'Load one or both programs.'}
+function resize(){const rect=canvas.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1);canvas.width=Math.max(1,Math.round(rect.width*dpr));canvas.height=Math.max(1,Math.round(rect.height*dpr));ctx.setTransform(dpr,0,0,dpr,0,0);draw()}
+function rot3(p,b){let x=p.x-b.cx,y=p.y-b.cy,z=p.z-b.cz;const cy=Math.cos(rotY),sy=Math.sin(rotY),x1=x*cy+z*sy,z1=-x*sy+z*cy,cx=Math.cos(rotX),sx=Math.sin(rotX),y1=y*cx-z1*sx,z2=y*sx+z1*cx;return{x:x1,y:y1,z:z2}}
+function project(p,b,W,H){const pad=34,span=dataSpan(b),base=Math.min((W-2*pad)/span,(H-2*pad)/span)*scale;if(view==='3d'){const r=rot3(p,b),perspective=1/(1+Math.max(-.75,Math.min(.75,r.z/(span*5))));return[W/2+panX+r.x*base*perspective,H/2+panY-r.y*base*perspective]}let u,v,du,dv,uc,vc;if(view==='xy'){u=p.x;v=p.y;du=Math.max(.001,b.xmax-b.xmin);dv=Math.max(.001,b.ymax-b.ymin);uc=b.cx;vc=b.cy}else if(view==='xz'){u=p.x;v=p.z;du=Math.max(.001,b.xmax-b.xmin);dv=Math.max(.001,b.zmax-b.zmin);uc=b.cx;vc=b.cz}else{u=p.y;v=p.z;du=Math.max(.001,b.ymax-b.ymin);dv=Math.max(.001,b.zmax-b.zmin);uc=b.cy;vc=b.cz}const base2=Math.min((W-2*pad)/du,(H-2*pad)/dv)*scale;return[W/2+panX+(u-uc)*base2,H/2+panY-(v-vc)*base2]}
+function grid(b,W,H){ctx.save();ctx.strokeStyle='#eef2f7';ctx.lineWidth=1;const step=50;for(let x=step;x<W;x+=step){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}for(let y=step;y<H;y+=step){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}ctx.restore();if(view==='3d')drawAxes(b,W,H);else draw2DAxes(b,W,H)}
+function drawAxes(b,W,H){const span=dataSpan(b)*.28,o={x:b.cx,y:b.cy,z:b.cz},axes=[['X',{x:b.cx+span,y:b.cy,z:b.cz},'#ef4444'],['Y',{x:b.cx,y:b.cy+span,z:b.cz},'#22c55e'],['Z',{x:b.cx,y:b.cy,z:b.cz+span},'#3b82f6']],a=project(o,b,W,H);ctx.font='11px system-ui';for(const [label,p,color] of axes){const q=project(p,b,W,H);ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...q);ctx.stroke();ctx.fillStyle=color;ctx.fillText(label,q[0]+4,q[1]-4)}}
+function draw2DAxes(b,W,H){const p0=view==='xy'?{x:0,y:0,z:b.cz}:view==='xz'?{x:0,y:b.cy,z:0}:{x:b.cx,y:0,z:0},ox=project(p0,b,W,H);ctx.save();ctx.strokeStyle='#cbd5e1';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,ox[1]);ctx.lineTo(W,ox[1]);ctx.moveTo(ox[0],0);ctx.lineTo(ox[0],H);ctx.stroke();ctx.restore()}
+function drawPath(pts,color,b,W,H){if(pts.length<2)return;const maxIndex=Math.max(1,Math.floor((pts.length-1)*progress));ctx.save();ctx.lineWidth=lineWidth;ctx.lineCap='round';ctx.lineJoin='round';for(const rapid of [false,true]){if(rapid&&!showRapid)continue;ctx.beginPath();let active=false;ctx.strokeStyle=rapid?'rgba(100,116,139,.55)':color;ctx.setLineDash(rapid?[5,5]:[]);for(let i=1;i<=maxIndex;i++){const isRapid=pts[i].type==='rapid';if(isRapid!==rapid){active=false;continue}const a=project(pts[i-1],b,W,H),q=project(pts[i],b,W,H);if(!active){ctx.moveTo(a[0],a[1]);active=true}ctx.lineTo(q[0],q[1])}ctx.stroke()}const marker=pts[Math.min(maxIndex,pts.length-1)];if(marker){const m=project(marker,b,W,H);ctx.setLineDash([]);ctx.fillStyle=color;ctx.beginPath();ctx.arc(m[0],m[1],4,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke()}ctx.restore()}
+function draw(){const W=canvas.clientWidth,H=canvas.clientHeight;ctx.clearRect(0,0,W,H);const b=bounds();if(!b){ctx.fillStyle='#94a3b8';ctx.font='14px system-ui';ctx.textAlign='center';ctx.fillText('Load Program A and/or Program B to begin',W/2,H/2);return}ctx.textAlign='left';grid(b,W,H);if(showA)drawPath(A.pts,'#1f2937',b,W,H);if(showB)drawPath(B.pts,'#2563eb',b,W,H)}
+document.querySelectorAll('[data-view]').forEach(btn=>btn.addEventListener('click',()=>{view=btn.dataset.view;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b===btn));fitView()}));
+$('showA').addEventListener('change',e=>{showA=e.target.checked;updateMeta();draw()});$('showB').addEventListener('change',e=>{showB=e.target.checked;updateMeta();draw()});$('showRapid').addEventListener('change',e=>{showRapid=e.target.checked;draw()});$('lineWidth').addEventListener('change',e=>{lineWidth=Number(e.target.value)||2;draw()});
+$('fitBtn').addEventListener('click',fitView);$('reset3dBtn').addEventListener('click',()=>{rotX=-.65;rotY=.72;fitView()});$('progress').addEventListener('input',e=>{progress=Number(e.target.value)/1000;$('positionReadout').textContent=`${Math.round(progress*100)}%`;draw()});$('endBtn').addEventListener('click',()=>{$('progress').value=1000;progress=1;$('positionReadout').textContent='100%';draw()});
+$('playBtn').addEventListener('click',()=>{playing=!playing;$('playBtn').textContent=playing?'❚❚ Pause':'▶ Play';if(playing){if(progress>=1){progress=0;$('progress').value=0}lastPlay=performance.now();playRAF=requestAnimationFrame(playStep)}else cancelAnimationFrame(playRAF)});
+function playStep(now){if(!playing)return;const dt=now-lastPlay;lastPlay=now;progress=Math.min(1,progress+dt/8000);$('progress').value=Math.round(progress*1000);$('positionReadout').textContent=`${Math.round(progress*100)}%`;draw();if(progress>=1){playing=false;$('playBtn').textContent='▶ Play';return}playRAF=requestAnimationFrame(playStep)}
+canvas.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId);canvas.classList.add('dragging')});canvas.addEventListener('pointerup',e=>{dragging=false;canvas.classList.remove('dragging');try{canvas.releasePointerCapture(e.pointerId)}catch{}});canvas.addEventListener('pointercancel',()=>{dragging=false;canvas.classList.remove('dragging')});canvas.addEventListener('pointermove',e=>{if(!dragging)return;const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;if(view==='3d'&&!e.shiftKey){rotY+=dx*.008;rotX+=dy*.008;rotX=Math.max(-Math.PI/2+.03,Math.min(Math.PI/2-.03,rotX))}else{panX+=dx;panY+=dy}draw()});canvas.addEventListener('wheel',e=>{e.preventDefault();const f=Math.exp(-e.deltaY*.001);scale=Math.max(.12,Math.min(20,scale*f));draw()},{passive:false});
+window.addEventListener('resize',resize);resize();updateMeta();
+})();
+</script>
+</body>
+</html>
