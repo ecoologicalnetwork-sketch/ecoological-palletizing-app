@@ -103,11 +103,12 @@ if(showPoints){ctx.setLineDash([]);ctx.beginPath();for(let i=1;i<pts.length;i++)
 for(let i=0;i<pts.length;i++){if(i!==maxIndex&&(!showPoints||i===0||(pts[i].type==='rapid'&&!showRapid)))continue;hitPoints.push({x:projected[i][0],y:projected[i][1],index:i,key,color,point:pts[i]})}ctx.restore()}
 function drawMarker(pts,color,key,b,W,H){if(!pts.length)return;const index=currentIndex(pts),m=project(pts[index],b,W,H);ctx.save();ctx.fillStyle=color;ctx.globalAlpha=.15;ctx.beginPath();ctx.arc(...m,19,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;ctx.beginPath();ctx.arc(...m,key==='A'?12:9,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.stroke();ctx.font='bold 13px system-ui';const label=key+' '+index,x=m[0]+17,y=m[1]+(key==='A'?-15:24);ctx.strokeStyle='#fff';ctx.lineWidth=4;ctx.strokeText(label,x,y);ctx.fillText(label,x,y);ctx.restore()}
 
-// Thermwood head/head convention: B about -Y, then C about -Z.
-// Reference: https://cam.autodesk.com/posts/post.php?name=thermwood%205-axis
+// Display-space tip-to-shank convention checked against MFKPassV3.SUB.
+// At B=-90: C90 -> -Y, C180 -> +X, C270 -> +Y, C360 -> -X.
+// CAM post axis declarations are not directly display-space tool vectors.
 // Tool-managed B=0 points down; XYZ is the displayed tip, not a machine simulation.
 // Cylinder dimensions are converted to the active point's G20/G21 or Thermwood G70/G71 units.
-function cutterGeometry(point,rings=true){const b=-point.b*Math.PI/180,c=-point.c*Math.PI/180,cb=Math.cos(b),sb=Math.sin(b),cc=Math.cos(c),sc=Math.sin(c),axis={x:sb*cc,y:sb*sc,z:cb},u={x:cb*cc,y:cb*sc,z:-sb},v={x:-sc,y:cc,z:0},factor=(point.unitLabel==='mm'||(point.unitLabel==='program units'&&$('cutterUnits').value==='mm'))?25.4:1,radius=.125*factor,length=2.5*factor;
+function cutterGeometry(point,rings=true){const b=point.b*Math.PI/180,c=point.c*Math.PI/180,cb=Math.cos(b),sb=Math.sin(b),cc=Math.cos(c),sc=Math.sin(c),axis={x:sb*cc,y:sb*sc,z:cb},u={x:cb*cc,y:cb*sc,z:-sb},v={x:-sc,y:cc,z:0},factor=(point.unitLabel==='mm'||(point.unitLabel==='program units'&&$('cutterUnits').value==='mm'))?25.4:1,radius=.125*factor,length=2.5*factor;
 const ring=t=>Array.from({length:24},(_,i)=>{const a=i*Math.PI/12;return{x:point.x+axis.x*t+radius*(u.x*Math.cos(a)+v.x*Math.sin(a)),y:point.y+axis.y*t+radius*(u.y*Math.cos(a)+v.y*Math.sin(a)),z:point.z+axis.z*t+radius*(u.z*Math.cos(a)+v.z*Math.sin(a))}});return{tip:rings?ring(0):[],top:rings?ring(length):[],axis,length,radius}}
 function drawCutter(pts,key,b,W,H){if(!$('showCutter').checked||!pts.length)return;const p=pts[currentIndex(pts)],g=cutterGeometry(p),faces=[];
 for(let i=0;i<24;i++)faces.push([g.tip[i],g.tip[(i+1)%24],g.top[(i+1)%24],g.top[i]]);faces.push(g.tip,g.top);
