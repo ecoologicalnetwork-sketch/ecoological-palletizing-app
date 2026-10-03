@@ -31,5 +31,27 @@
     }
     return rows;
   }
-  root.CncEdit = {AXES, editPoint, straighten, changes};
+  // Display-space Rz(C) Ry(B), matching the existing Thermwood cutter preview.
+  // X/Y are transverse to the spindle; Z is the spindle direction. Blade
+  // mounting chooses the zero-angle normal explicitly instead of inferring it
+  // from travel direction.
+  function cutterNormal(point, zeroAxis = 'x') {
+    const b=point.b*Math.PI/180,c=point.c*Math.PI/180;
+    if(!Number.isFinite(b)||!Number.isFinite(c))throw new Error('B/C orientation is unavailable at this point.');
+    const cb=Math.cos(b),sb=Math.sin(b),cc=Math.cos(c),sc=Math.sin(c);
+    const frame={x:{x:cb*cc,y:cb*sc,z:-sb},y:{x:-sc,y:cc,z:0},z:{x:sb*cc,y:sb*sc,z:cb}};
+    if(!frame[zeroAxis])throw new Error('Choose a zero-angle blade normal.');
+    return Object.fromEntries(Object.entries(frame[zeroAxis]).map(([k,v])=>[k,Math.abs(v)<1e-10?0:v]));
+  }
+  function moveOnNormal(points,index,normal,distance,axes,pins=[]) {
+    validate(points,index,index,axes);
+    if(pins.includes(index))throw new Error('This endpoint is locked. Clear its pin before moving it.');
+    if(!Number.isFinite(distance))throw new Error('Drag distance is not finite.');
+    const blocked=['x','y','z'].filter(a=>Math.abs(normal[a])>1e-10&&!axes.includes(a));
+    if(blocked.length)throw new Error('Unlock '+blocked.join('/').toUpperCase()+' to move along this blade normal.');
+    const values={};
+    for(const a of ['x','y','z'])if(normal[a])values[a]=Number((points[index][a]+normal[a]*distance).toFixed(10));
+    return editPoint(points,index,values);
+  }
+  root.CncEdit = {AXES, editPoint, straighten, changes, cutterNormal, moveOnNormal};
 })(typeof globalThis === 'undefined' ? this : globalThis);

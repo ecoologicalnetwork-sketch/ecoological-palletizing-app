@@ -35,7 +35,7 @@ h1{font-size:24px;margin:0 0 5px}.subtitle{color:var(--muted);font-size:13px;mar
 </style>
 <link rel="stylesheet" href="editor.css">
 <script src="edit-core.js"></script>
-<script src="editor.js"></script>
+<script src="direct-editor.js"></script>
 </head>
 <body>
 <div class="app">
@@ -59,7 +59,7 @@ h1{font-size:24px;margin:0 0 5px}.subtitle{color:var(--muted);font-size:13px;mar
   <div class="toolbar">
     <button data-view="3d" class="active">3D</button><button data-view="xy">Top XY</button><button data-view="xz">Side XZ</button><button data-view="yz">End YZ</button><span class="sep"></span>
     <label class="toggle"><input id="showA" type="checkbox" checked><span class="legendDot a"></span> A</label><label class="toggle"><input id="showB" type="checkbox" checked><span class="legendDot b"></span> B</label><label class="toggle"><input id="showPoints" type="checkbox" checked> Point dots</label><label class="toggle"><input id="showRapid" type="checkbox"> Rapid moves</label>
-    <span class="sep"></span><label class="toggle"><input id="showCutter" type="checkbox" checked> Cutter · ¼″ × 2½″</label><label class="toggle">Unspecified units <select id="cutterUnits"><option value="in">Inches</option><option value="mm">Millimeters</option></select></label><span class="sep"></span><button id="fitBtn">Fit view</button><button id="reset3dBtn">Reset 3D</button><label class="toggle">Line width <select id="lineWidth"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+    <span class="sep"></span><label class="toggle"><input id="showCutter" type="checkbox" checked> Cutter · ¼″ × 2½″</label><label class="toggle">Unspecified units <select id="cutterUnits"><option value="in">Inches</option><option value="mm">Millimeters</option></select></label><span class="sep"></span><button id="fitBtn">Fit all</button><button id="reset3dBtn">Reset 3D</button><label class="toggle">Line width <select id="lineWidth"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
   </div>
   <div class="readouts"><div class="positionCard a"><div class="positionHead"><span class="positionTitle">Program A position</span><span id="aLine" class="lineReadout">Line —</span></div><div id="aAxes" class="axisGrid"></div><div id="aSource" class="sourceLine">No program loaded</div></div><div class="positionCard b"><div class="positionHead"><span class="positionTitle">Program B position</span><span id="bLine" class="lineReadout">Line —</span></div><div id="bAxes" class="axisGrid"></div><div id="bSource" class="sourceLine">No program loaded</div></div></div>
   <div class="viewerWrap">
@@ -73,7 +73,7 @@ h1{font-size:24px;margin:0 0 5px}.subtitle{color:var(--muted);font-size:13px;mar
 'use strict';
 const $=id=>document.getElementById(id),canvas=$('viewer'),ctx=canvas.getContext('2d');
 const AXES=['X','Y','Z','B','C','A','U','V','W'],DEFAULT_AXES=['X','Y','Z','B','C'];
-let editor=null;
+let editor=null,cameraFrame=null,cameraIndex=0;
 let A=emptyProgram(),B=emptyProgram(),view='3d',progress=0,showA=true,showB=true,showRapid=false,showPoints=true,lineWidth=2,scale=1,panX=0,panY=0,rotX=-0.65,rotY=0.72,dragging=false,lastX=0,lastY=0,playing=false,playRAF=0,lastPlay=0;
 function emptyProgram(){return{name:'',pts:[],axesUsed:new Set(),unitLabel:'program units'}}
 function stripComments(line){let out='',depth=0;for(const ch of line){if(ch==='('){depth++;continue}if(ch===')'){depth=Math.max(0,depth-1);continue}if(depth===0){if(ch===';')break;out+=ch}}return out}
@@ -89,7 +89,14 @@ function setupDropZone(cardId,targetId,key){const card=$(cardId),target=$(target
 setupDropZone('dropA','na','A');setupDropZone('dropB','nb','B');window.addEventListener('dragover',e=>e.preventDefault());window.addEventListener('drop',e=>{if(!e.target.closest?.('.card'))e.preventDefault()});
 function visibleSets(){const out=[];if(showA&&A.pts.length)out.push(A.pts);if(showB&&B.pts.length)out.push(B.pts);return out.length?out:[A.pts.length?A.pts:B.pts].filter(Boolean)}
 function bounds(includeCutter=true){const sets=visibleSets();if(!sets.length||!sets.some(s=>s.length))return null;let xmin=Infinity,xmax=-Infinity,ymin=Infinity,ymax=-Infinity,zmin=Infinity,zmax=-Infinity;for(const s of sets)for(const p of s){xmin=Math.min(xmin,p.x);xmax=Math.max(xmax,p.x);ymin=Math.min(ymin,p.y);ymax=Math.max(ymax,p.y);zmin=Math.min(zmin,p.z);zmax=Math.max(zmax,p.z);if(includeCutter&&$('showCutter').checked){const g=cutterGeometry(p,false),end={x:p.x+g.axis.x*g.length,y:p.y+g.axis.y*g.length,z:p.z+g.axis.z*g.length};xmin=Math.min(xmin,end.x-g.radius,p.x-g.radius);xmax=Math.max(xmax,end.x+g.radius,p.x+g.radius);ymin=Math.min(ymin,end.y-g.radius,p.y-g.radius);ymax=Math.max(ymax,end.y+g.radius,p.y+g.radius);zmin=Math.min(zmin,end.z-g.radius,p.z-g.radius);zmax=Math.max(zmax,end.z+g.radius,p.z+g.radius)}}if(!Number.isFinite(xmin))return null;return{xmin,xmax,ymin,ymax,zmin,zmax,cx:(xmin+xmax)/2,cy:(ymin+ymax)/2,cz:(zmin+zmax)/2}}
-function dataSpan(b){return Math.max(1,b.xmax-b.xmin,b.ymax-b.ymin,b.zmax-b.zmin)}function fitView(){scale=1;panX=0;panY=0;draw()}
+function dataSpan(b){return Math.max(1,b.xmax-b.xmin,b.ymax-b.ymin,b.zmax-b.zmin)}function anchorCamera(index,center=false){
+  const p=B.pts[index];if(!p)return;
+  const before=editor?.frozenBounds()||cameraFrame||bounds();if(!before)return;
+  const W=canvas.clientWidth,H=canvas.clientHeight,q=project(p,before,W,H);
+  cameraIndex=index;cameraFrame={...before,cx:p.x,cy:p.y,cz:p.z};
+  panX=center?0:q[0]-W/2;panY=center?0:q[1]-H/2;
+}
+function fitView(){scale=1;panX=0;panY=0;cameraFrame=null;draw();if(cameraIndex){anchorCamera(cameraIndex);draw()}}
 function updateMeta(){$("clearA").disabled=!A.name;$("clearB").disabled=!B.name;updateStepControls();const fmt=o=>`${Math.max(0,o.pts.length-1).toLocaleString()} motion points${o.name?` · ${o.unitLabel}`:''}`;$('saMeta').textContent=fmt(A);$('sbMeta').textContent=fmt(B);const b=bounds(false),units=A.name&&B.name&&A.unitLabel===B.unitLabel?A.unitLabel:(A.name&&!B.name?A.unitLabel:(!A.name&&B.name?B.unitLabel:'program units'));$('boundsText').textContent=b?`X ${(b.xmax-b.xmin).toFixed(3)} · Y ${(b.ymax-b.ymin).toFixed(3)} · Z ${(b.zmax-b.zmin).toFixed(3)} ${units} span`:'Load one or both programs.'}
 function resize(){const rect=canvas.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1);canvas.width=Math.max(1,Math.round(rect.width*dpr));canvas.height=Math.max(1,Math.round(rect.height*dpr));ctx.setTransform(dpr,0,0,dpr,0,0);draw()}
 function rot3(p,b){let x=p.x-b.cx,y=p.y-b.cy,z=p.z-b.cz;const cy=Math.cos(rotY),sy=Math.sin(rotY),x1=x*cy+z*sy,z1=-x*sy+z*cy,cx=Math.cos(rotX),sx=Math.sin(rotX),y1=y*cx-z1*sx,z2=y*sx+z1*cx;return{x:x1,y:y1,z:z2}}
@@ -120,7 +127,7 @@ const depth=face=>face.reduce((sum,p)=>sum+(view==='3d'?rot3(p,b).z:view==='xy'?
 for(const face of faces){const q=face.map(p=>project(p,b,W,H));ctx.beginPath();ctx.moveTo(...q[0]);for(const xy of q.slice(1))ctx.lineTo(...xy);ctx.closePath();const nx=face[0].x-p.x,ny=face[0].y-p.y,nz=face[0].z-p.z;const shade=face.length===24?78:Math.round(62+16*(nx*.4+ny*.2+nz*.8)/g.radius);ctx.fillStyle=key==='A'?'hsl(30 18% '+shade+'% / .88)':'hsl(218 65% '+shade+'% / .88)';ctx.fill();ctx.strokeStyle=key==='A'?'#3339':'#1d4ed899';ctx.stroke()}ctx.restore()}
 $('showCutter').addEventListener('change',draw);$('cutterUnits').addEventListener('change',draw);
 
-function draw(){const W=canvas.clientWidth,H=canvas.clientHeight;ctx.clearRect(0,0,W,H);hitPoints=[];const b=bounds();if(!b){hideHover();ctx.fillStyle='#94a3b8';ctx.font='14px system-ui';ctx.textAlign='center';ctx.fillText('Load Program A and/or Program B to begin',W/2,H/2);return}ctx.textAlign='left';grid(b,W,H);if(showA)drawPath(A.pts,'#111111','A',b,W,H);if(showB)drawPath(B.pts,'#2563eb','B',b,W,H);if(showA)drawCutter(A.pts,'A',b,W,H);if(showB)drawCutter(B.pts,'B',b,W,H);if(showA)drawMarker(A.pts,'#111111','A',b,W,H);if(showB)drawMarker(B.pts,'#2563eb','B',b,W,H);editor?.overlay(ctx,b,W,H);updateHover()}
+function draw(){const W=canvas.clientWidth,H=canvas.clientHeight;ctx.clearRect(0,0,W,H);hitPoints=[];const b=editor?.frozenBounds()||cameraFrame||bounds();if(!b){hideHover();ctx.fillStyle='#94a3b8';ctx.font='14px system-ui';ctx.textAlign='center';ctx.fillText('Load Program A and/or Program B to begin',W/2,H/2);return}ctx.textAlign='left';grid(b,W,H);if(showA)drawPath(A.pts,'#111111','A',b,W,H);if(showB)drawPath(B.pts,'#2563eb','B',b,W,H);if(showA)drawCutter(A.pts,'A',b,W,H);if(showB)drawCutter(B.pts,'B',b,W,H);if(showA)drawMarker(A.pts,'#111111','A',b,W,H);if(showB)drawMarker(B.pts,'#2563eb','B',b,W,H);editor?.overlay(ctx,b,W,H);updateHover()}
 function axisListFor(program){const list=[...DEFAULT_AXES];for(const ax of AXES)if(program.axesUsed.has(ax)&&!list.includes(ax))list.push(ax);return list}
 function fmtAxis(v){return Number.isFinite(v)?v.toFixed(4):'—'}
 function renderProgramReadout(program,prefix){const lineEl=$(prefix+'Line'),axesEl=$(prefix+'Axes'),sourceEl=$(prefix+'Source');if(!program.pts.length){lineEl.textContent='Line —';axesEl.innerHTML=DEFAULT_AXES.map(ax=>`<div class="axisItem"><div class="axisLabel">${ax}</div><div class="axisValue">—</div></div>`).join('');sourceEl.textContent='No program loaded';return}const idx=currentIndex(program.pts),p=program.pts[idx],block=p.block!==null?` · N${p.block}`:'';lineEl.textContent=`Line ${p.line}${block} · Point ${idx}/${Math.max(0,program.pts.length-1)}`;axesEl.innerHTML=axisListFor(program).map(ax=>`<div class="axisItem"><div class="axisLabel">${ax}</div><div class="axisValue">${fmtAxis(p[ax.toLowerCase()])}</div></div>`).join('');sourceEl.textContent=(prefix==='b'&&editor?.hasChanges()?'Original source: ':'')+(p.raw||'(start position)')}
@@ -140,12 +147,35 @@ function stopRepeat(){clearTimeout(repeatDelay);clearInterval(repeatTimer);repea
 for(const [id,direction] of [['prevBtn',-1],['nextBtn',1]]){const button=$(id);button.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();stopRepeat();button.setPointerCapture(e.pointerId);stepPoint(direction);repeatDelay=setTimeout(()=>{repeatTimer=setInterval(()=>{stepPoint(direction);if(progress===0||progress===1)stopRepeat()},65)},320)});for(const event of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(event,stopRepeat);button.addEventListener('click',e=>{if(e.detail===0)stepPoint(direction)})}
 window.addEventListener('pointerup',stopRepeat);window.addEventListener('blur',()=>{stopRepeat();stopPlaying();hideHover()});document.addEventListener('visibilitychange',()=>{if(document.hidden){stopRepeat();stopPlaying()}});
 canvas.addEventListener('pointerleave',hideHover);
-let pickStart=null;
-canvas.addEventListener('pointerdown',e=>{pickStart={x:e.clientX,y:e.clientY}});
-canvas.addEventListener('pointerup',e=>{if(!pickStart||Math.hypot(e.clientX-pickStart.x,e.clientY-pickStart.y)>4)return;const r=canvas.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;let hit=null,d=144;for(const p of hitPoints){if(p.key!=='B'||p.index===0)continue;const n=(p.x-x)**2+(p.y-y)**2;if(n<d){hit=p;d=n}}if(hit)editor?.select(hit.index);pickStart=null});
-canvas.addEventListener('pointerdown',e=>{hideHover();dragging=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId);canvas.classList.add('dragging')});canvas.addEventListener('pointerup',e=>{dragging=false;canvas.classList.remove('dragging');try{canvas.releasePointerCapture(e.pointerId)}catch{}});canvas.addEventListener('pointercancel',()=>{dragging=false;canvas.classList.remove('dragging')});canvas.addEventListener('pointermove',e=>{if(!dragging){const r=canvas.getBoundingClientRect();hoverPosition={x:e.clientX-r.left,y:e.clientY-r.top};updateHover();return}const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;if(view==='3d'&&!e.shiftKey){rotY+=dx*.008;rotX+=dy*.008;rotX=Math.max(-Math.PI/2+.03,Math.min(Math.PI/2-.03,rotX))}else{panX+=dx;panY+=dy}draw()});canvas.addEventListener('wheel',e=>{e.preventDefault();const f=Math.exp(-e.deltaY*.001);scale=Math.max(.12,Math.min(20,scale*f));draw()},{passive:false});
+let pointerOwner=null;
+canvas.addEventListener('pointerdown',e=>{
+  if(e.button!==0||pointerOwner)return;
+  hideHover();stopPlaying();stopRepeat();
+  if(editor?.pointerDown(e)){pointerOwner='edit';canvas.setPointerCapture(e.pointerId);return;}
+  pointerOwner='camera';dragging=true;lastX=e.clientX;lastY=e.clientY;
+  canvas.setPointerCapture(e.pointerId);canvas.classList.add('dragging');
+});
+canvas.addEventListener('pointerup',e=>{
+  if(pointerOwner==='edit')editor?.pointerUp(e);
+  pointerOwner=null;dragging=false;canvas.classList.remove('dragging');
+  if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);
+});
+function cancelPointer(){editor?.cancelGesture();pointerOwner=null;dragging=false;canvas.classList.remove('dragging')}
+canvas.addEventListener('pointercancel',cancelPointer);
+canvas.addEventListener('lostpointercapture',()=>{if(pointerOwner)cancelPointer()});
+window.addEventListener('blur',cancelPointer);
+canvas.addEventListener('pointermove',e=>{
+  if(pointerOwner==='edit'){editor?.pointerMove(e);return;}
+  if(!dragging){editor?.pointerMove(e);const r=canvas.getBoundingClientRect();hoverPosition={x:e.clientX-r.left,y:e.clientY-r.top};updateHover();return;}
+  const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;
+  if(view==='3d'&&!e.shiftKey){rotY+=dx*.008;rotX=Math.max(-Math.PI/2+.03,Math.min(Math.PI/2-.03,rotX+dy*.008))}
+  else{panX+=dx;panY+=dy}draw();
+});
+canvas.addEventListener('wheel',e=>{e.preventDefault();if(pointerOwner)return;scale=Math.max(.12,Math.min(20,scale*Math.exp(-e.deltaY*.001)));draw()},{passive:false});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')cancelPointer()});
+
 window.addEventListener('resize',resize);resize();updateMeta();setProgress(0);
-editor=createCncEditor({getA:()=>A,getB:()=>B,setPoints:pts=>{B={...B,pts}},currentB:()=>currentIndex(B.pts),goB:i=>{stopPlaying();stopRepeat();setProgress(i/(B.pts.length-1))},draw,readouts:updatePositionReadouts,project,showB:()=>showB,showRapid:()=>showRapid,copyA:()=>{loadVersions.B++;stopPlaying();stopRepeat();B={...A,name:A.name+' (working copy)',pts:A.pts.map(p=>({...p})),axesUsed:new Set(A.axesUsed)};editor?.reset();$('nb').textContent=B.name;$('fb').value='';showB=true;$('showB').checked=true;updateMeta();setProgress(0)}});
+editor=createCncEditor({resize,fit:fitView,setView:v=>{view=v;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));fitView()},hits:()=>hitPoints,anchor:anchorCamera,center:i=>{anchorCamera(i,true);draw()},clearAnchor:()=>{cameraFrame=null;cameraIndex=0},getA:()=>A,getB:()=>B,setPoints:pts=>{B={...B,pts}},currentB:()=>currentIndex(B.pts),goB:i=>{stopPlaying();stopRepeat();setProgress(i/(B.pts.length-1))},draw,readouts:updatePositionReadouts,project,showB:()=>showB,showRapid:()=>showRapid,copyA:()=>{loadVersions.B++;stopPlaying();stopRepeat();B={...A,name:A.name+' (working copy)',pts:A.pts.map(p=>({...p})),axesUsed:new Set(A.axesUsed)};editor?.reset();$('nb').textContent=B.name;$('fb').value='';showB=true;$('showB').checked=true;updateMeta();setProgress(0)}});
 window.addEventListener('beforeunload',e=>{if(editor?.hasChanges()){e.preventDefault();e.returnValue=''}});
 })();
 </script>

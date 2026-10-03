@@ -13,3 +13,18 @@ for(const args of [[0,3,['x']],[1,8,['x']],[3,1,['x']],[1,2,['x']],[1,3,[]],[1,3
 assert.throws(()=>CncEdit.editPoint(pts,2,{x:NaN}));assert.throws(()=>CncEdit.editPoint(pts,2,{x:Infinity}));assert.throws(()=>CncEdit.editPoint(pts,0,{x:5}));
 const rotary=pts.map(p=>({...p}));rotary[1].c=350;rotary[5].c=10;assert.equal(CncEdit.straighten(rotary,1,5,['c'])[3].c,180);
 console.log('PASS: endpoint locks, axis locks, source preservation, isolated edits, invalid inputs, literal rotary interpolation, and change records');
+const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
+for(const b of [0,25,-90,145])for(const c of [-8640,-45,90,450]){
+  const n=CncEdit.cutterNormal({b,c},'x'),spindle=CncEdit.cutterNormal({b,c},'z');
+  near(Math.hypot(n.x,n.y,n.z),1);near(n.x*spindle.x+n.y*spindle.y+n.z*spindle.z,0);
+  const result=CncEdit.moveOnNormal(pts,3,n,.25,['x','y','z']);
+  for(const a of ['x','y','z'])near(result[3][a]-pts[3][a],n[a]*.25);
+  for(const a of ['b','c','a','u','v','w','raw'])assert.equal(result[3][a],pts[3][a]);
+  assert.deepEqual(result[2],pts[2]);
+}
+assert.deepEqual(CncEdit.cutterNormal({b:0,c:0},'x'),{x:1,y:0,z:0});
+assert.deepEqual(CncEdit.cutterNormal({b:0,c:90},'x'),{x:0,y:1,z:0});
+assert.throws(()=>CncEdit.moveOnNormal(pts,3,{x:1,y:0,z:0},1,['y','z']));
+assert.throws(()=>CncEdit.moveOnNormal(pts,3,{x:1,y:0,z:0},1,['x','y','z'],[3,5]));
+const setup=pts.map(p=>({...p}));setup[2].raw='G92 X10';assert.throws(()=>CncEdit.moveOnNormal(setup,2,{x:1,y:0,z:0},1,['x']));
+console.log('PASS: B/C-constrained drag, multi-turn C, perpendicularity, axis and endpoint locks');
