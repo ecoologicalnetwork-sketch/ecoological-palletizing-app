@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict');
+require('./edit-core.js');
+const pts=Array.from({length:6},(_,i)=>({x:i*2,y:i===2?8:i,z:10,b:i*20,c:350+i*2,a:0,u:0,v:0,w:0,line:i+20,block:i*10,raw:'original '+i}));
+const original=JSON.stringify(pts);
+const straight=CncEdit.straighten(pts,1,5,['x','y']);
+assert.equal(straight[2].y,2);assert.equal(straight[3].y,3);
+assert.deepEqual(straight[1],pts[1]);assert.deepEqual(straight[5],pts[5]);assert.deepEqual(straight[0],pts[0]);
+for(let i=0;i<pts.length;i++) for(const a of ['z','b','c','a','u','v','w','line','raw']) assert.equal(straight[i][a],pts[i][a]);
+assert.equal(JSON.stringify(pts),original);
+const edited=CncEdit.editPoint(pts,3,{z:-7,c:720});assert.equal(edited[3].z,-7);assert.equal(edited[3].c,720);assert.equal(edited[3].x,pts[3].x);assert.deepEqual(edited[4],pts[4]);
+assert.deepEqual(CncEdit.changes(pts,edited),[{point:3,line:23,block:30,axes:{Z:{before:10,after:-7},C:{before:356,after:720}}}]);
+for(const args of [[0,3,['x']],[1,8,['x']],[3,1,['x']],[1,2,['x']],[1,3,[]],[1,3,['q']],[1.5,3,['x']]])assert.throws(()=>CncEdit.straighten(pts,...args));
+assert.throws(()=>CncEdit.editPoint(pts,2,{x:NaN}));assert.throws(()=>CncEdit.editPoint(pts,2,{x:Infinity}));assert.throws(()=>CncEdit.editPoint(pts,0,{x:5}));
+const rotary=pts.map(p=>({...p}));rotary[1].c=350;rotary[5].c=10;assert.equal(CncEdit.straighten(rotary,1,5,['c'])[3].c,180);
+console.log('PASS: endpoint locks, axis locks, source preservation, isolated edits, invalid inputs, literal rotary interpolation, and change records');
