@@ -43,7 +43,7 @@
       for(const a of editableAxes()){
         const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.id='unlock_'+a;check.checked=a==='x';check.setAttribute('aria-label','Change '+a.toUpperCase());label.append(check,' '+a.toUpperCase());$('axisLocks').append(label);
         const valueLabel=document.createElement('label'),input=document.createElement('input');input.type='number';input.step='any';input.id='value_'+a;input.setAttribute('aria-label',a.toUpperCase()+' coordinate');valueLabel.append(a.toUpperCase(),input);$('editAxes').append(valueLabel);
-        check.onchange=()=>{cancel();say('Axis locks updated. Selected axes updated.');};input.oninput=()=>cancel(false);
+        check.onchange=()=>{$('dragDirection').value='isolated';isolatedAxes=axes();cancel();say('Isolated movements: selected axes updated.');};input.oninput=()=>cancel(false);
       }
     }
     function reset(){gesture=null;base=clone(program().pts);undo=[];redo=[];pending=null;selected=0;startPin=endPin=null;mode='move';projection=null;api.clearAnchor();$('rangeStart').value='';$('rangeEnd').value='';axesUI();refresh();say(program().pts.length?'Click a A point and drag along the teal guide.':'Load a program. Load Program A to start editing.');}
@@ -76,7 +76,8 @@
     $('editShowCutter').checked=$('showCutter').checked;
     $('editShowCutter').onchange=()=>{cancelGesture();$('showCutter').checked=$('editShowCutter').checked;api.draw();};
     $('showCutter').addEventListener('change',()=>{$('editShowCutter').checked=$('showCutter').checked;});
-    $('dragDirection').onchange=()=>{cancelGesture();invalidateRequest();api.draw();say($('dragDirection').value==='isolated'?'Drag using only the selected X/Y/Z axes. Arrow keys move 0.005 inch.':'Follow the cutter guide; B/C stay fixed.');};
+    let isolatedAxes=['x'];
+    $('dragDirection').onchange=()=>{cancelGesture();for(const a of CncEdit.AXES){const check=$('unlock_'+a);if(check)check.checked=$('dragDirection').value==='isolated'?isolatedAxes.includes(a):['x','y','z'].includes(a);}invalidateRequest();api.draw();say($('dragDirection').value==='isolated'?'Drag using only the selected X/Y/Z axes. Arrow keys move 0.005 inch.':'Follow the cutter guide; B/C stay fixed.');};
     $('dragScope').onchange=()=>{cancelGesture();invalidateRequest();say($('dragScope').value==='point'?'Dragging moves only the selected point. Section endpoints remain fixed.':'Dragging an inside point smoothly moves its neighbors, tapering to zero at both endpoints.');};
     $('copyToB').onclick=()=>{if(program().name&&!window.confirm('Reset edited A to the original and discard edits?'))return;api.copyA();reset();api.draw();say('Edited A is ready. Click a point and drag it.');};
     for(const [id,m]of [['moveMode','move'],['pickStart','start'],['pickEnd','end']])$(id).onclick=()=>{cancelGesture();pending=null;mode=m;refresh();api.draw();say(m==='move'?'Click a point and drag. Empty space moves the view.':`Click the ${m} point on the path to lock it in.`);};
