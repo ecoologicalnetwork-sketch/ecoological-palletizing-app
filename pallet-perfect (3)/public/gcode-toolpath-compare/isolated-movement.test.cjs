@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const source=fs.readFileSync(__dirname+'/direct-editor.js','utf8'),start=source.indexOf('function isolatedVector('),end=source.indexOf('function dragVector(',start);
+let allowed=['x'];const context={axes:()=>allowed,projection:{bounds:{}},canvas:{clientWidth:800,clientHeight:600},api:{project:p=>[100*p.x+40*p.y,-80*p.z+30*p.y]}};
+vm.createContext(context);vm.runInContext(source.slice(start,end),context);
+const p={x:2,y:3,z:4};
+let n=context.isolatedVector(p,20,-10);assert(Math.abs(n.x-.2)<1e-7);assert.equal(n.y,0);assert.equal(n.z,0);
+allowed=['z'];n=context.isolatedVector(p,20,-16);assert.equal(n.x,0);assert.equal(n.y,0);assert(Math.abs(n.z-.2)<1e-7);
+allowed=['x','z'];n=context.isolatedVector(p,20,-16);assert(Math.abs(n.x-.2)<1e-7);assert.equal(n.y,0);assert(Math.abs(n.z-.2)<1e-7);
+allowed=['y'];n=context.isolatedVector(p,8,6);assert.equal(n.x,0);assert.equal(n.z,0);assert(Math.abs(n.y-.2)<1e-7);
+allowed=['b','c'];assert.throws(()=>context.isolatedVector(p),/Select X, Y or Z/);
+console.log('PASS: isolated X, Y, Z and X/Z dragging preserves excluded axes in oblique views');
