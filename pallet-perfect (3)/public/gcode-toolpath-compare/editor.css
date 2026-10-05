@@ -28,3 +28,4 @@
 #zoomReadout{align-self:center;font:12px ui-monospace,monospace;color:var(--muted);min-width:78px;text-align:right}
 .selectionHint{margin:0 0 10px;font-size:12px;color:var(--muted);line-height:1.5}.viewSettings{display:flex;align-items:center;flex-wrap:wrap;gap:16px;margin-top:10px}.zoomControl{display:flex;align-items:center;gap:8px;font-size:12px;flex:1;max-width:470px}.zoomControl input{min-width:100px;width:100%;accent-color:#0f766e}.viewSettings #zoomReadout{min-width:62px}.directSettings .dragMode{margin-left:0}
 @media(max-width:850px){.editColumns{grid-template-columns:1fr}.editAxes{grid-template-columns:repeat(3,minmax(0,1fr))}.directTop strong{width:100%}.directActions button{padding:9px}.dragMode{margin-left:0}.pinSummary #editCount{margin-left:0}}
+

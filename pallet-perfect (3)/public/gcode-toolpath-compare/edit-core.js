@@ -6,6 +6,8 @@
     if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end >= points.length || start > end) throw new Error('Choose valid motion points (point 0 is the assumed start).');
     if (!axes.length || axes.some(a => !AXES.includes(a))) throw new Error('Choose at least one axis to change.');
     const range=points.slice(start,end+1);
+    if(range.some(p=>p.editable===false))throw new Error('Select linear motion points only.');
+    if(new Set(range.map(p=>p.section)).size>1)throw new Error('Choose points within one section without resets, tool changes or unit changes.');
     if(range.some(p=>/G\s*(?:92|52)(?![\d.])/i.test(p.raw||''))) throw new Error('This selection includes a coordinate-setting block. Select motion points within one continuous cutting section.');
     if(new Set(range.map(p=>p.unitLabel)).size>1) throw new Error('This selection crosses a units change. Choose points in one unit system.');
   }
@@ -105,3 +107,4 @@
   const validateSection=(points,start,end)=>validate(points,start,end,['x']);
   root.CncEdit = {AXES, editPoint, straighten, changes, cutterNormal, cutterDirection, moveOnNormal, morphRange, evenCurve, validateSection};
 })(typeof globalThis === 'undefined' ? this : globalThis);
+
