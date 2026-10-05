@@ -26,11 +26,9 @@
   }
   function changes(before, after) {
     const rows = [];
-    for (let i = 1; i < before.length; i++) {
-      const axes = {};
-      for (const a of AXES) if (before[i][a] !== after[i][a]) axes[a.toUpperCase()] = {before: before[i][a], after: after[i][a]};
-      if (Object.keys(axes).length) rows.push({point: i, line: before[i].line, block: before[i].block, axes});
-    }
+    const key=p=>p.inserted?'new:'+p.uid:'line:'+p.line,old=new Map(before.slice(1).map(p=>[key(p),p])),current=new Set(after.slice(1).map(key));
+    for(let i=1;i<after.length;i++){const p=after[i],q=old.get(key(p)),axes={};for(const a of AXES)if(!q||q[a]!==p[a])axes[a.toUpperCase()]={before:q?q[a]:null,after:p[a]};if(Object.keys(axes).length)rows.push({point:i,line:p.line,block:p.block,...(q?{}:{action:'add'}),axes});}
+    for(const p of before.slice(1))if(!current.has(key(p)))rows.push({point:null,line:p.line,block:p.block,action:'delete',axes:{POINT:{before:'existing',after:'deleted'}}});
     return rows;
   }
   // Display-space Rz(C) Ry(B), matching the existing Thermwood cutter preview.
