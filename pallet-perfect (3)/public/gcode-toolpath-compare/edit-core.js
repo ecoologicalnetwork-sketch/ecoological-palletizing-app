@@ -31,6 +31,20 @@
     for(const p of before.slice(1))if(!current.has(key(p)))rows.push({point:null,line:p.line,block:p.block,action:'delete',axes:{POINT:{before:'existing',after:'deleted'}}});
     return rows;
   }
+  function insertPoint(points, index, t, uid) {
+    validate(points,index-1,index,['x']);
+    if(points[index-1].type!==points[index].type)throw new Error('Add a point within one continuous linear segment.');
+    if(!Number.isFinite(t)||t<=0||t>=1)throw new Error('Choose a position strictly between 0% and 100%.');
+    const a=points[index-1],b=points[index],p={...b,inserted:true,uid,line:null,block:null,raw:'Inserted linear point'};
+    for(const axis of AXES){p[axis]=a[axis]+(b[axis]-a[axis])*t;if(!Number.isFinite(p[axis]))throw new Error('Neighbor coordinates are unavailable.');}
+    const result=points.map(p=>({...p}));result.splice(index,0,p);return result;
+  }
+  function deletePoints(points, indices) {
+    const remove=new Set(indices);
+    if(!remove.size)throw new Error('Select a point to delete.');
+    for(const i of remove){if(!Number.isInteger(i)||i<=1||i>=points.length-1)throw new Error('Keep the first and last motion points.');validate(points,i-1,i+1,['x']);}
+    return points.filter((p,i)=>!remove.has(i)).map(p=>({...p}));
+  }
   // Display-space Rz(C) Ry(B), matching the existing Thermwood cutter preview.
   // X/Y are transverse to the spindle; Z is the spindle direction. Blade
   // mounting chooses the zero-angle normal explicitly instead of inferring it
@@ -103,6 +117,6 @@
     return result;
   }
   const validateSection=(points,start,end)=>validate(points,start,end,['x']);
-  root.CncEdit = {AXES, editPoint, straighten, changes, cutterNormal, cutterDirection, moveOnNormal, morphRange, evenCurve, validateSection};
+  root.CncEdit = {AXES, editPoint, straighten, changes, cutterNormal, cutterDirection, moveOnNormal, morphRange, evenCurve, validateSection, insertPoint, deletePoints};
 })(typeof globalThis === 'undefined' ? this : globalThis);
 
