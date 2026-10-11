@@ -116,7 +116,48 @@
     }
     return result;
   }
+  // Sample the original path first so new cutter angles retain their local context.
+  function sectionEdit(points,start,end,options) {
+    const {kind,axes,apex,addPoints=false,reach=0,strength=1}=options;
+    validate(points,start,end,axes);
+    if(end-start<2)throw new Error('Select a section with an interior point.');
+    if(!Number.isFinite(reach)||reach<0||!Number.isFinite(strength)||strength<0||strength>1)throw new Error('Choose a valid blend distance and strength.');
+    if(new Set(points.slice(start,end+1).map(p=>p.type)).size>1)throw new Error('Choose a section within one motion type.');
+    const xyz=['x','y','z'],dist=(a,b)=>Math.hypot(...xyz.map(k=>b[k]-a[k]));
+    const arc=[0];for(let i=1;i<points.length;i++)arc[i]=arc[i-1]+dist(points[i-1],points[i]);
+    const safe=(a,b)=>{try{validate(points,a,b,['x']);return points[a].type===points[b].type;}catch(e){return false;}};
+    let left=start,right=end;
+    if(reach&&strength){while(left>1&&safe(left-1,left)&&arc[start]-arc[left]<reach)left--;while(right<points.length-1&&safe(right,right+1)&&arc[right]-arc[end]<reach)right++;}
+    const low=Math.max(arc[left],arc[start]-reach),high=Math.min(arc[right],arc[end]+reach),step=options.spacing||.05;
+    let serial=0;const result=[],locations=[],indices=new Map();
+    for(let i=0;i<points.length;i++){
+      if(i){const a=arc[i-1],b=arc[i],marks=[];
+        if(kind==='curve'&&addPoints&&i>start&&i<=end){const n=Math.max(2,Math.ceil((b-a)/step));for(let j=1;j<n;j++)marks.push(j/n);}
+        if(reach&&strength&&i>left&&i<=right&&(i<=start||i>end)){
+          const lo=Math.max(a,low),hi=Math.min(b,high);if(hi>lo){for(const d of [lo,hi])if(d>a+1e-10&&d<b-1e-10)marks.push((d-a)/(b-a));const n=Math.ceil((hi-lo)/(step/2));for(let j=1;j<n;j++)marks.push((lo+(hi-lo)*j/n-a)/(b-a));}
+        }
+        for(const t of [...new Set(marks)].sort((a,b)=>a-b)){const q={...points[i],inserted:true,uid:'blend-'+Date.now()+'-'+(++serial),line:null,block:null,raw:'Inserted linear point'};for(const k of AXES)q[k]=points[i-1][k]+(points[i][k]-points[i-1][k])*t;result.push(q);locations.push(a+(b-a)*t);if(serial>5000)throw new Error('This selection would add too many points. Choose a smaller section.');}
+      }
+      indices.set(i,result.length);result.push({...points[i]});locations.push(arc[i]);
+    }
+    const first=indices.get(start),last=indices.get(end),peak=indices.get(apex),spatial=axes.length===1?xyz:axes;
+    let edited=kind==='curve'?evenCurve(result,first,last,peak,spatial):straighten(result,first,last,axes);
+    for(let i=first+1;i<last;i++)for(const k of xyz)if(!axes.includes(k))edited[i][k]=result[i][k];
+    if(reach&&strength)for(const side of [-1,1]){
+      const edge=side<0?first:last,limit=side<0?low:high,length=Math.abs(locations[edge]-limit);if(length<1e-10)continue;
+      const anchor=locations.findIndex((d,i)=>i>=indices.get(left)&&Math.abs(d-limit)<1e-8);if(anchor<0)continue;
+      const neighbor=edge-side,originalNeighbor=anchor+side;
+      const vector=xyz.map(k=>edited[edge][k]-edited[neighbor][k]),norm=Math.hypot(...vector);
+      const outer=originalNeighbor>=0&&originalNeighbor<result.length&&safe(side<0?left: right-1,side<0?left+1:right)?xyz.map(k=>result[originalNeighbor][k]-result[anchor][k]):xyz.map(k=>result[anchor][k]-result[anchor-side][k]);
+      const outerNorm=Math.hypot(...outer);
+      for(let i=Math.min(edge,anchor)+1;i<Math.max(edge,anchor);i++){
+        const t=Math.abs(locations[i]-locations[edge])/length,h00=2*t**3-3*t*t+1,h10=t**3-2*t*t+t,h01=-2*t**3+3*t*t,h11=t**3-t*t;
+        for(const k of axes){const j=xyz.indexOf(k),m0=norm?vector[j]/norm*length:0,m1=outerNorm?outer[j]/outerNorm*length:0,target=h00*edited[edge][k]+h10*m0+h01*result[anchor][k]+h11*m1;edited[i][k]=result[i][k]+strength*(target-result[i][k]);}
+      }
+    }
+    return {pts:edited,start:first,end:last,added:serial};
+  }
   const validateSection=(points,start,end)=>validate(points,start,end,['x']);
-  root.CncEdit = {AXES, editPoint, straighten, changes, cutterNormal, cutterDirection, moveOnNormal, morphRange, evenCurve, validateSection, insertPoint, deletePoints};
+  root.CncEdit = {sectionEdit, AXES, editPoint, straighten, changes, cutterNormal, cutterDirection, moveOnNormal, morphRange, evenCurve, validateSection, insertPoint, deletePoints};
 })(typeof globalThis === 'undefined' ? this : globalThis);
 
