@@ -42,3 +42,5 @@
 #blendSettings label {display:grid;grid-template-columns:1fr auto;gap:6px}
 #blendSettings input[type=range] {grid-column:1 / -1;width:100%;padding:0}
 #autoCurvePointsRow,#blendBeyondRow {display:flex;gap:8px;align-items:center;margin:10px 0}
+
+#navigationOrb{position:absolute;left:12px;bottom:12px;width:160px;height:160px;cursor:grab;touch-action:none;z-index:3;border-radius:50%;filter:drop-shadow(0 2px 7px #0f172a20)}#navigationOrb:active{cursor:grabbing}#navigationOrb:focus-visible{outline:3px solid #0f766e}.lockInCorner{position:absolute;right:16px;bottom:16px;z-index:4;border:0;border-radius:12px;background:#0f766e;color:white;padding:13px 22px;font:700 15px system-ui;box-shadow:0 4px 12px #0f172a20;cursor:pointer}.lockInCorner:disabled{opacity:.5;cursor:default}#freeOptions select{font:inherit;padding:7px;border:1px solid #cbd5e1;border-radius:8px}#dragScopeRow[hidden]{display:none}#freeOptions[hidden]{display:none}@media(max-width:600px){#navigationOrb{width:125px;height:125px}.lockInCorner{right:10px;bottom:12px;padding:10px 15px}}

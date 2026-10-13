@@ -91,6 +91,12 @@
     }
     return result;
   }
+  function shiftRange(points,start,end,normal,distance,axes) {
+    validate(points,start,end,axes);
+    if(axes.some(a=>!['x','y','z'].includes(a)))throw new Error('Choose X, Y or Z for section movement.');
+    moveOnNormal(points,start,normal,distance,axes);
+    return points.map((p,i)=>{const q={...p};if(i>=start&&i<=end)for(const a of axes)q[a]=Number((p[a]+(normal[a]||0)*distance).toFixed(10));return q;});
+  }
   function evenCurve(points,start,end,apex,axes) {
     validate(points,start,end,axes);
     if(!Number.isInteger(apex)||apex<=start||apex>=end)throw new Error('Select an apex inside the section, between its locked endpoints.');
@@ -158,6 +164,6 @@
     return {pts:edited,start:first,end:last,added:serial};
   }
   const validateSection=(points,start,end)=>validate(points,start,end,['x']);
-  root.CncEdit = {sectionEdit, AXES, editPoint, straighten, changes, cutterNormal, cutterDirection, moveOnNormal, morphRange, evenCurve, validateSection, insertPoint, deletePoints};
+  root.CncEdit = {sectionEdit, AXES, editPoint, straighten, changes, cutterNormal, cutterDirection, moveOnNormal, morphRange, shiftRange, evenCurve, validateSection, insertPoint, deletePoints};
 })(typeof globalThis === 'undefined' ? this : globalThis);
 
